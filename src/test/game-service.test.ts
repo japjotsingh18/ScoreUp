@@ -9,8 +9,10 @@ import {
   processActionTargetTimeout,
   processMiniGameQueue,
   processMiniGameTimeout,
+  processChampionshipTimeout,
   requestMiniGameChallenge,
   submitMiniGameResult,
+  submitChampionshipResult,
   submitActionChoice,
   submitActionTarget,
 } from "../lib/supabase/game";
@@ -179,5 +181,40 @@ describe("core game service", () => {
       p_result_payload: { position: 0.4, elapsedMs: 900 },
     });
     expect(rpc.mock.calls[2]?.[1]).not.toHaveProperty("p_challenge_id");
+  });
+
+  it("submits only championship timing input and exposes a room-wide timeout processor", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: matchFixture, error: null });
+    const client = clientWithRpc(rpc);
+    await submitChampionshipResult(
+      client,
+      matchFixture.room.id,
+      { position: 0.42, elapsedMs: 1_250 },
+      "f6459f71-c29f-43d2-887c-a13f4d56a171",
+    );
+    await processChampionshipTimeout(
+      client,
+      matchFixture.room.id,
+      "8db937ae-04cc-4d45-9b4d-746674cebc20",
+    );
+    expect(rpc.mock.calls).toEqual([
+      [
+        "submit_championship_result",
+        {
+          p_room_id: matchFixture.room.id,
+          p_result_payload: { position: 0.42, elapsedMs: 1_250 },
+          p_idempotency_key: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+        },
+      ],
+      [
+        "process_expired_championship",
+        {
+          p_room_id: matchFixture.room.id,
+          p_idempotency_key: "8db937ae-04cc-4d45-9b4d-746674cebc20",
+        },
+      ],
+    ]);
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("winnerPlayerId");
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("targetPosition");
   });
 });

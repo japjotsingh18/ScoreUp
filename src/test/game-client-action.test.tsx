@@ -144,6 +144,117 @@ function miniGameSnapshot(
   };
 }
 
+function championshipSnapshot(isParticipant = true) {
+  const start = new Date(Date.now() - 1_000).toISOString();
+  const deadline = new Date(Date.now() + 9_000).toISOString();
+  return {
+    ...pointSnapshot(),
+    serverTime: new Date().toISOString(),
+    room: {
+      ...pointSnapshot().room,
+      phase: "championship_tiebreaker",
+      currentTurnPlayerId: null,
+      phaseDeadline: deadline,
+      tiebreakerRequired: true,
+    },
+    round: {
+      ...pointSnapshot().round,
+      phase: "round_summary",
+      status: "completed",
+      currentTurnIndex: null,
+      currentTurnPlayerId: null,
+      turnDeadline: null,
+      completedAt: "2026-08-13T00:00:30Z",
+    },
+    completionState: {
+      phase: "championship_tiebreaker",
+      tiebreaker: {
+        status: "active",
+        isParticipant,
+        participantIds: matchFixture.players.map((player) => player.id),
+        startsAt: start,
+        submissionDeadline: deadline,
+        specification: isParticipant
+          ? {
+              type: "stop_bar",
+              targetPosition: 0.4,
+              markerSpeed: 0.5,
+              initialDirection: 1,
+              maximumDurationMs: 10_000,
+            }
+          : null,
+        ownSubmitted: false,
+        submittedCount: 0,
+        participantCount: 2,
+        winnerPlayerId: null,
+        resolutionMethod: null,
+      },
+      result: null,
+      rematchRoomId: null,
+    },
+  };
+}
+
+function completedSnapshot() {
+  const base = pointSnapshot();
+  return {
+    ...base,
+    room: {
+      ...base.room,
+      status: "completed",
+      phase: "completed",
+      currentTurnPlayerId: null,
+      phaseDeadline: null,
+      completedAt: "2026-08-13T00:01:00Z",
+    },
+    round: {
+      ...base.round,
+      phase: "round_summary",
+      status: "completed",
+      currentTurnIndex: null,
+      currentTurnPlayerId: null,
+      phaseDeadline: null,
+      turnDeadline: null,
+      completedAt: "2026-08-13T00:00:50Z",
+    },
+    players: [
+      { ...base.players[0], score: 2_000, rank: 1, resolved: true },
+      { ...base.players[1], score: 1_225, rank: 2, resolved: true },
+    ],
+    completionState: {
+      phase: "completed",
+      tiebreaker: null,
+      result: {
+        winnerPlayerId: base.players[0].id,
+        resolutionMethod: "skill",
+        completedAt: "2026-08-13T00:01:00Z",
+        rankings: [
+          {
+            playerId: base.players[0].id,
+            score: 2_000,
+            rank: 1,
+            displayOrder: 1,
+          },
+          {
+            playerId: base.players[1].id,
+            score: 1_225,
+            rank: 2,
+            displayOrder: 2,
+          },
+        ],
+        statistics: [
+          {
+            category: "lock_in_points",
+            playerId: base.players[0].id,
+            value: 1_500,
+          },
+        ],
+      },
+      rematchRoomId: null,
+    },
+  };
+}
+
 describe("GameClient action phase", () => {
   beforeEach(() => {
     testState.rpc.mockReset();
@@ -408,5 +519,103 @@ describe("GameClient Mini-Game Challenges", () => {
         }),
       ),
     );
+  });
+});
+
+describe("GameClient completion and championship", () => {
+  beforeEach(() => {
+    testState.rpc.mockReset();
+    window.localStorage.clear();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("renders the official winner, full ranking, zero-qualifier stats, and completion actions", async () => {
+    const completed = completedSnapshot();
+    testState.rpc.mockResolvedValue({ data: completed, error: null });
+    render(<GameClient roomId={matchFixture.room.id} />);
+    expect(
+      await screen.findByRole("heading", { name: /maya wins/i }),
+    ).toBeVisible();
+    expect(screen.getByText("2,000 points")).toBeVisible();
+    expect(screen.getByText(/Maya · 1,500/)).toBeVisible();
+    expect(screen.getAllByText("No qualifying play")).toHaveLength(4);
+    expect(screen.getByRole("button", { name: /rematch/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /share result/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /return home/i })).toBeVisible();
+  });
+
+  it("copies a result-specific share summary without exposing credentials", async () => {
+    testState.rpc.mockResolvedValue({ data: completedSnapshot(), error: null });
+    const user = userEvent.setup();
+    const writeText = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    render(<GameClient roomId={matchFixture.room.id} />);
+    await user.click(
+      await screen.findByRole("button", { name: /share result/i }),
+    );
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("ScoreUp champion: Maya with 2,000 points"),
+    );
+    expect(writeText.mock.calls[0]?.[0]).not.toContain("service_role");
+  });
+
+  it("offers an accessible manual summary when clipboard sharing fails", async () => {
+    testState.rpc.mockResolvedValue({ data: completedSnapshot(), error: null });
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+      new Error("Clipboard blocked"),
+    );
+    const user = userEvent.setup();
+    render(<GameClient roomId={matchFixture.room.id} />);
+    await user.click(
+      await screen.findByRole("button", { name: /share result/i }),
+    );
+    expect(screen.getByText(/sharing is unavailable here/i)).toBeVisible();
+    expect(
+      (
+        screen.getByLabelText(
+          /copy this result summary/i,
+        ) as HTMLTextAreaElement
+      ).value,
+    ).toContain("ScoreUp champion: Maya");
+  });
+
+  it("offers the same server-timed keyboard control in reduced-motion mode", async () => {
+    window.localStorage.setItem(
+      "scoreup.preferences.v1",
+      JSON.stringify({ soundEnabled: false, reducedMotion: true }),
+    );
+    const active = championshipSnapshot();
+    testState.rpc.mockResolvedValue({ data: active, error: null });
+    const user = userEvent.setup();
+    render(<GameClient roomId={matchFixture.room.id} />);
+    expect(await screen.findByText(/marker at .* target at/i)).toBeVisible();
+    const stop = screen.getByRole("button", { name: "STOP" });
+    stop.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(testState.rpc).toHaveBeenCalledWith(
+        "submit_championship_result",
+        expect.objectContaining({
+          p_result_payload: expect.objectContaining({
+            position: expect.any(Number),
+            elapsedMs: expect.any(Number),
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("shows non-finalists a safe waiting state without the private specification", async () => {
+    const waiting = championshipSnapshot(false);
+    testState.rpc.mockResolvedValue({ data: waiting, error: null });
+    render(<GameClient roomId={matchFixture.room.id} />);
+    expect(
+      await screen.findByRole("heading", { name: /championship in progress/i }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "STOP" }),
+    ).not.toBeInTheDocument();
   });
 });

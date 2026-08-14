@@ -4,6 +4,7 @@ import {
   actionTargetInputSchema,
   actionTimeoutInputSchema,
   challengeInputSchema,
+  championshipSubmissionInputSchema,
   gameErrorCodes,
   lockInInputSchema,
   matchRoomInputSchema,
@@ -268,6 +269,36 @@ export function processMiniGameTimeout(
 ) {
   const input = lockInInputSchema.parse({ roomId, idempotencyKey });
   return runGameRpc(client, "process_expired_mini_game", {
+    p_room_id: input.roomId,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
+export function submitChampionshipResult(
+  client: SupabaseClient,
+  roomId: string,
+  result: { position: number; elapsedMs: number },
+  idempotencyKey: string,
+) {
+  const input = championshipSubmissionInputSchema.parse({
+    roomId,
+    result,
+    idempotencyKey,
+  });
+  return runGameRpc(client, "submit_championship_result", {
+    p_room_id: input.roomId,
+    p_result_payload: input.result,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
+export function processChampionshipTimeout(
+  client: SupabaseClient,
+  roomId: string,
+  idempotencyKey: string,
+) {
+  const input = lockInInputSchema.parse({ roomId, idempotencyKey });
+  return runGameRpc(client, "process_expired_championship", {
     p_room_id: input.roomId,
     p_idempotency_key: input.idempotencyKey,
   });

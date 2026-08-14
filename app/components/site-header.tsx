@@ -1,12 +1,13 @@
 "use client";
 
-import { Menu, Volume2 } from "lucide-react";
+import { Accessibility, Menu, Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
+import { useGamePreferences } from "../../src/hooks/use-game-preferences";
 import { Brand } from "./brand";
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
-  const [sound, setSound] = useState(true);
+  const preferences = useGamePreferences();
 
   return (
     <header className="site-header">
@@ -23,13 +24,37 @@ export function SiteHeader() {
         <button
           className="icon-button"
           type="button"
-          aria-label={sound ? "Turn sound off" : "Turn sound on"}
-          aria-pressed={sound}
-          onClick={() => setSound((value) => !value)}
+          aria-label={
+            preferences.soundEnabled ? "Turn sound off" : "Turn sound on"
+          }
+          aria-pressed={preferences.soundEnabled}
+          onClick={() => preferences.setSoundEnabled(!preferences.soundEnabled)}
         >
-          <Volume2 size={19} aria-hidden="true" />
+          {preferences.soundEnabled ? (
+            <Volume2 size={19} aria-hidden="true" />
+          ) : (
+            <VolumeX size={19} aria-hidden="true" />
+          )}
           <span className="icon-button-label">
-            {sound ? "Sound on" : "Sound off"}
+            {preferences.soundEnabled ? "Sound on" : "Sound off"}
+          </span>
+        </button>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={
+            preferences.reducedMotion
+              ? "Use standard motion"
+              : "Reduce interface motion"
+          }
+          aria-pressed={preferences.reducedMotion}
+          onClick={() =>
+            preferences.setReducedMotion(!preferences.reducedMotion)
+          }
+        >
+          <Accessibility size={19} aria-hidden="true" />
+          <span className="icon-button-label">
+            {preferences.reducedMotion ? "Reduced motion" : "Standard motion"}
           </span>
         </button>
         <a className="header-join" href="/join">

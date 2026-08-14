@@ -17,6 +17,7 @@ Narrowly scoped Postgres RPCs form the Milestone 2 command boundary. The databas
 - Direct browser inserts, updates, and deletes on rounds, cards, decisions, scores, deadlines, phases, and events are denied.
 - Action choices and draws force RLS and are owner-selectable only. The catalog, shields, mutation audit, score ledger, random selectors, and deterministic test controls have no browser grants.
 - Mini-Game challenge rows are visible only to their two participants; submission rows are owner-only through a narrow security-definer identity predicate. Participant locks, raw seeds, expected answers, escrow ledger rows, selectors, and deterministic overrides have no browser table access.
+- Championship participants can read the public attempt and only their own submission. Raw championship seed/expected result and deterministic controls remain private. Final results/awards are participant-readable and browser-write-denied.
 
 ## Command protections
 
@@ -52,6 +53,16 @@ Room codes are locators, not credentials. Control requires the original anonymou
 
 Heartbeats update `last_seen_at` through a bounded command. On reconnect, the same `auth.uid()` reclaims its player and receives an authoritative snapshot. A new anonymous identity cannot take over an active name. Host transfer is activity-triggered after a 60-second disconnected grace period and uses immutable join order; no external scheduler is required for this milestone.
 
+Heartbeat-only `last_seen_at` writes do not emit game invalidations; otherwise each authorized refetch would create another broadcast/refetch cycle. A visible `connected` transition still emits an invalidation. Game pages refresh periodically, refetch after Realtime recovery, and best-effort mark the seat disconnected on page hide.
+
+## Completion and rematch boundary
+
+The database derives the final score set, winner, ranks, awards, and completion time. Championship callers cannot supply a seed, target, winner, distance, rank, score, or statistic. The attempt shares identical conditions and server time across finalists; one-submission constraints, room locks, replay receipts, and database deadlines make resolution idempotent and disconnect-safe.
+
+A rematch is not an in-place reset. It creates a new room identifier and Realtime topic, then copies only approved configuration and roster fields. This prevents old operation UUIDs, submissions, snapshots, or events from controlling the new match while retaining the completed room as auditable history.
+
+Playwright provisioning is Node-only, validates a loopback application origin and UUID room ID, and invokes the named local Supabase Docker database directly. It is not imported by application code, contains no service-role key, and cannot target a non-loopback deployment through its configured base URL.
+
 ## Secrets and deployment
 
 The frontend receives only `VITE_SUPABASE_URL` and the public/publishable anonymous key. The Supabase service-role key is never required by this milestone and must not enter a Vite variable. Production Realtime channels must remain private, logs should redact payloads, error responses avoid internal detail, and dependency/security monitoring is part of deployment readiness.
@@ -59,3 +70,5 @@ The frontend receives only `VITE_SUPABASE_URL` and the public/publishable anonym
 ## Abuse and residual risk
 
 Server-side validation prevents ordinary score/card forgery, duplicate operations, cross-room actions, and replay. Mini-Game participants receive a derived playable specification, never the raw seed; a modified client can still automate visible conditions or falsify plausible local elapsed time. Receipt windows, delayed synchronized starts, compact validated results, seed-derived answer verification, and infeasible-value rejection reduce abuse, but browser timing is not tournament-grade anti-cheat. Strong competitive integrity would require device attestation or server-observable input commitments beyond this MVP.
+
+The same browser-timing limitation applies to championship Stop the Bar. Result sharing is intentionally limited to an allowlisted public text summary through clipboard/manual copy in this build; room codes, IDs, passwords, auth data, private cards, seeds, and submissions are excluded.

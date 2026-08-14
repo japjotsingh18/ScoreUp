@@ -88,6 +88,12 @@ export const matchFixture = {
     roomHasActiveChallenge: false,
     challenge: null,
   },
+  completionState: {
+    phase: "point_decisions",
+    tiebreaker: null,
+    result: null,
+    rematchRoomId: null,
+  },
   eligibleChallengeTargetIds: ["e66ab6c6-3eb6-4df4-ad2f-c2ba69aec19b"],
   roundSummaries: [],
   recentEvents: [

@@ -12,6 +12,7 @@ import {
   Users,
   WifiOff,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   roomErrorMessages,
@@ -41,6 +42,7 @@ function friendlyError(error: unknown) {
 }
 
 export function LobbyClient({ roomId }: { roomId: string | null }) {
+  const router = useRouter();
   const auth = useAnonymousSession();
   const authClient = auth.status === "ready" ? auth.client : null;
   const [snapshot, setSnapshot] = useState<LobbySnapshot | null>(null);
@@ -56,29 +58,32 @@ export function LobbyClient({ roomId }: { roomId: string | null }) {
   const previousHost = useRef<string | null>(null);
   const requestSequence = useRef(0);
 
-  const applySnapshot = useCallback((next: LobbySnapshot) => {
-    if (
-      next.room.status === "in_progress" ||
-      next.room.status === "completed"
-    ) {
-      window.location.assign(`/game?room=${encodeURIComponent(next.room.id)}`);
-      return;
-    }
-    if (
-      previousHost.current &&
-      previousHost.current !== next.room.hostPlayerId
-    ) {
-      const host = next.players.find(
-        (player) => player.id === next.room.hostPlayerId,
-      );
-      setNotice(
-        `${host?.displayName ?? "The earliest active player"} is now the host.`,
-      );
-    }
-    previousHost.current = next.room.hostPlayerId;
-    setSnapshot(next);
-    setError("");
-  }, []);
+  const applySnapshot = useCallback(
+    (next: LobbySnapshot) => {
+      if (
+        next.room.status === "in_progress" ||
+        next.room.status === "completed"
+      ) {
+        router.push(`/game?room=${encodeURIComponent(next.room.id)}`);
+        return;
+      }
+      if (
+        previousHost.current &&
+        previousHost.current !== next.room.hostPlayerId
+      ) {
+        const host = next.players.find(
+          (player) => player.id === next.room.hostPlayerId,
+        );
+        setNotice(
+          `${host?.displayName ?? "The earliest active player"} is now the host.`,
+        );
+      }
+      previousHost.current = next.room.hostPlayerId;
+      setSnapshot(next);
+      setError("");
+    },
+    [router],
+  );
 
   const refresh = useCallback(async () => {
     if (!authClient || !roomId) return;
@@ -180,7 +185,7 @@ export function LobbyClient({ roomId }: { roomId: string | null }) {
     setPending("start");
     try {
       const match = await startMatch(auth.client, snapshot.room.id);
-      window.location.assign(`/game?room=${encodeURIComponent(match.room.id)}`);
+      router.push(`/game?room=${encodeURIComponent(match.room.id)}`);
     } catch (cause) {
       setError(friendlyError(cause));
     } finally {
@@ -209,7 +214,7 @@ export function LobbyClient({ roomId }: { roomId: string | null }) {
     setPending("leave");
     try {
       await leaveRoom(auth.client, snapshot.room.id);
-      window.location.assign("/");
+      router.push("/");
     } catch (cause) {
       setError(friendlyError(cause));
       setPending(null);

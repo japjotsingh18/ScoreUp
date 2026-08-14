@@ -4,7 +4,7 @@
 
 ScoreUp will be delivered as seven independently verifiable milestones. Each milestone must pass its relevant automated tests and production build before work begins on the next one.
 
-Milestones 1–4 are implemented. Milestone 5 has not started.
+Milestones 1–6 are implemented and locally verified. Milestone 7 has not started.
 
 1. **Frontend foundation** — establish the React/TypeScript/Vite/Tailwind shell, routes, visual language, accessible forms, rules, and a representative lobby using typed mock data.
 2. **Multiplayer foundation** — add Supabase anonymous auth, normalized Postgres migrations, RLS, room RPCs, lobby presence, ready state, host controls, and secure password verification.
@@ -72,7 +72,7 @@ stateDiagram-v2
 
 Every transition is a database transaction invoked by a validated Edge Function/RPC. Clients render server timestamps locally and refetch an authoritative snapshot after reconnecting; Realtime notifications are hints that state changed, never the state of record.
 
-The implemented runtime now uses the `MiniGameResolution` branch. An empty queue passes through safely; otherwise challenges resolve one at a time in FIFO order before `RoundSummary`. Championship tiebreakers and rematches remain Milestone 6 work.
+The implemented runtime uses every branch shown above. An empty Mini-Game queue passes through safely; otherwise challenges resolve one at a time in FIFO order before `RoundSummary`. Finalization stores a unique leader immediately or creates one shared championship attempt for the tied leaders. A rematch creates a distinct room identity and returns the retained roster to a fresh ready check.
 
 ## Milestone acceptance gates
 

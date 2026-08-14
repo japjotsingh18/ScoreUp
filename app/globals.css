@@ -1798,6 +1798,170 @@ fieldset {
   }
 }
 
+/* Milestone 6 completion and championship */
+.game-championship-page,
+.game-complete-page {
+  min-height: 100vh;
+}
+.championship-shell,
+.final-results {
+  width: min(1120px, calc(100% - 40px));
+  margin: 44px auto 0;
+  padding-bottom: 54px;
+}
+.championship-heading,
+.winner-hero {
+  text-align: center;
+}
+.championship-heading > svg,
+.winner-hero > svg {
+  color: var(--lime);
+  filter: drop-shadow(0 0 18px rgba(216, 255, 67, 0.24));
+}
+.championship-heading h1,
+.winner-hero h1 {
+  margin: 6px 0;
+  font-family: var(--font-display);
+  font-size: clamp(54px, 9vw, 104px);
+  line-height: 0.9;
+}
+.championship-heading > p:last-child,
+.winner-hero > span {
+  color: var(--muted);
+}
+.championship-countdown,
+.championship-waiting,
+.championship-shell > .stop-bar-game {
+  min-height: 340px;
+  margin: 30px 0 20px;
+  padding: 30px;
+  display: grid;
+  place-content: center;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(118, 87, 255, 0.2), transparent 55%),
+    var(--panel);
+  text-align: center;
+}
+.championship-countdown strong {
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: 116px;
+  line-height: 0.8;
+}
+.championship-countdown span,
+.championship-waiting p,
+.stop-position-text {
+  color: var(--muted);
+}
+.championship-waiting > svg {
+  margin: 0 auto 12px;
+  color: var(--lime);
+}
+.championship-waiting h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5vw, 56px);
+}
+.winner-hero > strong {
+  display: block;
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 44px);
+}
+.final-results-grid {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.match-statistics {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(16, 18, 38, 0.92);
+}
+.match-statistics h2 {
+  margin-top: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+}
+.match-statistics dl {
+  margin: 0;
+  display: grid;
+  gap: 9px;
+}
+.match-statistics dl > div {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.match-statistics dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.match-statistics dd {
+  margin: 4px 0 0;
+  font-weight: 800;
+}
+.final-actions {
+  margin-top: 22px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.final-actions .button {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.share-fallback {
+  max-width: 720px;
+  margin: 20px auto 0;
+  display: grid;
+  gap: 8px;
+}
+.share-fallback label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.share-fallback textarea {
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--white);
+  font: inherit;
+}
+
+@media (max-width: 720px) {
+  .championship-shell,
+  .final-results {
+    width: calc(100% - 24px);
+  }
+  .final-results-grid {
+    grid-template-columns: 1fr;
+  }
+  .championship-countdown,
+  .championship-waiting,
+  .championship-shell > .stop-bar-game {
+    padding: 20px 14px;
+  }
+  .final-actions {
+    display: grid;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1807,6 +1971,15 @@ fieldset {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
 }
 
 /* Milestone 3 core game */

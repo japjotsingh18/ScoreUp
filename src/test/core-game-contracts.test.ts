@@ -3,6 +3,7 @@ import {
   actionChoiceInputSchema,
   actionTargetInputSchema,
   challengeInputSchema,
+  championshipSubmissionInputSchema,
   matchSnapshotSchema,
   miniGameChallengeInputSchema,
   miniGameSubmissionInputSchema,
@@ -183,6 +184,75 @@ describe("core game contracts", () => {
         roomId: matchFixture.room.id,
         challengeId: "8db937ae-04cc-4d45-9b4d-746674cebc20",
         result: { sequence: Array.from({ length: 100 }, () => "star") },
+        idempotencyKey: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("strictly parses participant-safe championship and official result state", () => {
+    const parsed = matchSnapshotSchema.parse({
+      ...matchFixture,
+      room: {
+        ...matchFixture.room,
+        status: "completed",
+        phase: "completed",
+        completedAt: "2026-08-13T00:01:00Z",
+      },
+      round: { ...matchFixture.round, status: "completed" },
+      completionState: {
+        phase: "completed",
+        tiebreaker: {
+          status: "resolved",
+          isParticipant: true,
+          participantIds: matchFixture.players.map((player) => player.id),
+          startsAt: "2026-08-13T00:00:40Z",
+          submissionDeadline: "2026-08-13T00:00:52Z",
+          specification: null,
+          ownSubmitted: true,
+          submittedCount: 2,
+          participantCount: 2,
+          winnerPlayerId: matchFixture.players[0].id,
+          resolutionMethod: "skill",
+        },
+        result: {
+          winnerPlayerId: matchFixture.players[0].id,
+          resolutionMethod: "skill",
+          completedAt: "2026-08-13T00:01:00Z",
+          rankings: matchFixture.players.map((player, index) => ({
+            playerId: player.id,
+            score: index ? 500 : 1_000,
+            rank: index + 1,
+            displayOrder: index + 1,
+          })),
+          statistics: [
+            {
+              category: "lock_in_points",
+              playerId: matchFixture.players[0].id,
+              value: 1_000,
+            },
+          ],
+        },
+        rematchRoomId: null,
+      },
+    });
+    expect(parsed.completionState.result?.winnerPlayerId).toBe(
+      matchFixture.players[0].id,
+    );
+    expect(parsed.completionState.tiebreaker).not.toHaveProperty("seed");
+  });
+
+  it("validates compact championship results and rejects out-of-range positions", () => {
+    expect(
+      championshipSubmissionInputSchema.parse({
+        roomId: matchFixture.room.id,
+        result: { position: 0.45, elapsedMs: 1_200 },
+        idempotencyKey: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+      }).result,
+    ).toEqual({ position: 0.45, elapsedMs: 1_200 });
+    expect(
+      championshipSubmissionInputSchema.safeParse({
+        roomId: matchFixture.room.id,
+        result: { position: 2, elapsedMs: 1_200 },
         idempotencyKey: "f6459f71-c29f-43d2-887c-a13f4d56a171",
       }).success,
     ).toBe(false);

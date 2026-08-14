@@ -4,10 +4,13 @@ import {
   Brain,
   Check,
   Clock3,
+  Copy,
   Crown,
   Gamepad2,
   Radio,
   RefreshCcw,
+  RotateCcw,
+  Share2,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -17,7 +20,7 @@ import {
   WifiOff,
   Zap,
 } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   gameErrorMessages,
@@ -42,16 +45,26 @@ import {
   processActionPhaseTimeout,
   processActionTargetTimeout,
   processMiniGameTimeout,
+  processChampionshipTimeout,
   requestMiniGameChallenge,
   submitMiniGameResult,
+  submitChampionshipResult,
   submitActionChoice,
   submitActionTarget,
 } from "../../src/lib/supabase/game";
+import {
+  markRoomDisconnected,
+  requestRematch,
+} from "../../src/lib/supabase/rooms";
 import {
   subscribeToGame,
   type RealtimeConnectionState,
 } from "../../src/lib/supabase/realtime";
 import { Brand } from "../components/brand";
+import {
+  playGameCue,
+  useGamePreferences,
+} from "../../src/hooks/use-game-preferences";
 
 function messageFor(cause: unknown) {
   return cause instanceof GameOperationError
@@ -106,9 +119,7 @@ function eventCopy(event: PublicGameEvent, snapshot: MatchSnapshot) {
     case "scores_updated":
       return "Leaderboard updated.";
     case "match_completed":
-      return event.payload.tiebreakerRequired
-        ? "Match complete with a tie for first."
-        : "Match complete.";
+      return "The final result is official.";
     case "mini_game_requested":
       return `${actor ?? "A player"} queued a Mini-Game Challenge.`;
     case "mini_game_started":
@@ -123,10 +134,22 @@ function eventCopy(event: PublicGameEvent, snapshot: MatchSnapshot) {
       return "The Mini-Game queue advanced.";
     case "mini_game_phase_completed":
       return "All queued Mini-Game Challenges are complete.";
+    case "match_finalizing":
+      return "The server is calculating the final standings.";
+    case "championship_tiebreaker_started":
+      return "The tied leaders entered the championship Stop Bar.";
+    case "championship_submission_received":
+      return `${actor ?? "A finalist"} locked their championship result.`;
+    case "championship_resolved":
+      return `${actor ?? "A finalist"} won the championship tiebreaker.`;
+    case "rematch_created":
+      return "A new rematch lobby is ready.";
   }
 }
 
 export function GameClient({ roomId }: { roomId: string | null }) {
+  const router = useRouter();
+  const preferences = useGamePreferences();
   const auth = useAnonymousSession();
   const authClient = auth.status === "ready" ? auth.client : null;
   const [snapshot, setSnapshot] = useState<MatchSnapshot | null>(null);
@@ -149,6 +172,9 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   const summaryAttempt = useRef("");
   const actionTimeoutAttempt = useRef("");
   const miniTimeoutAttempt = useRef("");
+  const championshipTimeoutAttempt = useRef("");
+  const previousPhase = useRef<string | null>(null);
+  const [shareFallback, setShareFallback] = useState("");
 
   const applySnapshot = useCallback((next: MatchSnapshot) => {
     setSnapshot(next);
@@ -203,6 +229,19 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   }, [authClient, refresh, roomId]);
 
   useEffect(() => {
+    if (!authClient || !roomId) return;
+    const heartbeat = window.setInterval(() => void refresh(), 15_000);
+    const pageHide = () => {
+      void markRoomDisconnected(authClient, roomId).catch(() => undefined);
+    };
+    window.addEventListener("pagehide", pageHide);
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener("pagehide", pageHide);
+    };
+  }, [authClient, refresh, roomId]);
+
+  useEffect(() => {
     const deadline =
       snapshot?.actionState.draw?.status === "awaiting_target"
         ? snapshot.actionState.draw.targetDeadline
@@ -212,6 +251,21 @@ export function GameClient({ roomId }: { roomId: string | null }) {
     const interval = window.setInterval(tick, 250);
     return () => window.clearInterval(interval);
   }, [snapshot?.actionState.draw, snapshot?.room.phaseDeadline]);
+
+  useEffect(() => {
+    const phase = snapshot?.room.phase ?? null;
+    if (phase && phase !== previousPhase.current) {
+      if (phase === "completed")
+        playGameCue(preferences.soundEnabled, "complete");
+      else if (
+        phase === "point_decisions" &&
+        snapshot?.room.currentTurnPlayerId ===
+          snapshot?.players.find((player) => player.isSelf)?.id
+      )
+        playGameCue(preferences.soundEnabled, "turn");
+      previousPhase.current = phase;
+    }
+  }, [preferences.soundEnabled, snapshot]);
 
   useEffect(() => {
     if (!authClient || !snapshot || remaining > 0 || pending) return;
@@ -280,6 +334,26 @@ export function GameClient({ roomId }: { roomId: string | null }) {
       const timer = window.setTimeout(() => {
         setPending("mini-timeout");
         void processMiniGameTimeout(
+          authClient,
+          snapshot.room.id,
+          crypto.randomUUID(),
+        )
+          .then(applySnapshot)
+          .catch((cause) => {
+            setError(messageFor(cause));
+            void refresh();
+          })
+          .finally(() => setPending(null));
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (snapshot.room.phase === "championship_tiebreaker") {
+      const attempt = `${snapshot.room.id}:${snapshot.completionState.tiebreaker?.submissionDeadline ?? "pending"}`;
+      if (championshipTimeoutAttempt.current === attempt) return;
+      championshipTimeoutAttempt.current = attempt;
+      const timer = window.setTimeout(() => {
+        setPending("championship-timeout");
+        void processChampionshipTimeout(
           authClient,
           snapshot.room.id,
           crypto.randomUUID(),
@@ -491,6 +565,78 @@ export function GameClient({ roomId }: { roomId: string | null }) {
     }
   }
 
+  async function submitChampionship(result: Record<string, unknown>) {
+    if (auth.status !== "ready" || !snapshot) return;
+    setPending("championship-submit");
+    setNotice("");
+    try {
+      applySnapshot(
+        await submitChampionshipResult(
+          auth.client,
+          snapshot.room.id,
+          {
+            position: Number(result.position),
+            elapsedMs: Number(result.elapsedMs),
+          },
+          crypto.randomUUID(),
+        ),
+      );
+      setNotice("Your championship result is locked.");
+    } catch (cause) {
+      setError(messageFor(cause));
+      void refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function createRematch() {
+    if (auth.status !== "ready" || !snapshot) return;
+    const existing = snapshot.completionState.rematchRoomId;
+    if (existing) {
+      router.push(`/lobby?room=${existing}`);
+      return;
+    }
+    setPending("rematch");
+    try {
+      const lobby = await requestRematch(
+        auth.client,
+        snapshot.room.id,
+        crypto.randomUUID(),
+      );
+      router.push(`/lobby?room=${lobby.room.id}`);
+    } catch (cause) {
+      setError(messageFor(cause));
+      setPending(null);
+    }
+  }
+
+  async function copyResult() {
+    if (!snapshot?.completionState.result) return;
+    const result = snapshot.completionState.result;
+    const winner = snapshot.players.find(
+      (player) => player.id === result.winnerPlayerId,
+    );
+    const summary = `ScoreUp champion: ${winner?.displayName ?? "Winner"} with ${winner?.score.toLocaleString() ?? "0"} points. ${snapshot.players.map((player) => `#${player.rank} ${player.displayName} ${player.score.toLocaleString()}`).join(" · ")}`;
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(summary);
+      setNotice("Share summary copied to your clipboard.");
+    } catch {
+      setShareFallback(summary);
+      setNotice("Sharing is unavailable here. Copy the public summary below.");
+    }
+  }
+
+  async function returnHome() {
+    if (auth.status === "ready" && snapshot) {
+      await markRoomDisconnected(auth.client, snapshot.room.id).catch(
+        () => undefined,
+      );
+    }
+    router.push("/");
+  }
+
   if (auth.status === "unconfigured" || auth.status === "error") {
     return (
       <GameState
@@ -519,31 +665,47 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   }
 
   if (snapshot.room.status === "completed") {
-    const leaders = snapshot.players.filter((player) => player.rank === 1);
     return (
       <main className="game-page game-complete-page">
         <header className="game-topbar">
           <Brand />
           <Connection state={connection} />
         </header>
-        <section className="game-complete-card">
-          <Trophy size={46} aria-hidden="true" />
-          <p className="eyebrow">PRELIMINARY RESULT</p>
-          <h1>
-            {snapshot.room.tiebreakerRequired
-              ? "TIED AT THE TOP"
-              : `${leaders[0]?.displayName ?? "LEADER"} WINS`}
-          </h1>
-          <p>
-            {snapshot.room.tiebreakerRequired
-              ? "A championship tiebreaker is required and remains reserved for Milestone 6."
-              : "The final core-game round is complete."}
-          </p>
-          <Leaderboard snapshot={snapshot} />
-          <Link className="button button-primary" href="/">
-            Return home
-          </Link>
-        </section>
+        <FinalResultsPanel
+          snapshot={snapshot}
+          pending={pending}
+          shareFallback={shareFallback}
+          onRematch={createRematch}
+          onShare={copyResult}
+          onReturnHome={returnHome}
+        />
+        {(error || notice) && (
+          <div className="game-announcement" role="status">
+            {error || notice}
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  if (snapshot.room.phase === "championship_tiebreaker") {
+    return (
+      <main className="game-page game-championship-page">
+        <header className="game-topbar">
+          <Brand />
+          <Connection state={connection} />
+        </header>
+        <ChampionshipPanel
+          snapshot={snapshot}
+          pending={pending}
+          reducedMotion={preferences.reducedMotion}
+          onSubmit={submitChampionship}
+        />
+        {(error || notice) && (
+          <div className="game-announcement" role="status">
+            {error || notice}
+          </div>
+        )}
       </main>
     );
   }
@@ -1042,28 +1204,47 @@ function MiniGamePlay({
 function StopBarGame({
   specification,
   disabled,
+  reducedMotion = false,
+  authoritativeStartedAt,
   onSubmit,
 }: {
   specification: Extract<MiniGameSpecification, { type: "stop_bar" }>;
   disabled: boolean;
+  reducedMotion?: boolean;
+  authoritativeStartedAt?: string;
   onSubmit: (result: Record<string, unknown>) => Promise<void>;
 }) {
   const startedAt = useRef(0);
   const [position, setPosition] = useState(0);
 
+  const elapsed = useCallback(
+    () =>
+      authoritativeStartedAt
+        ? Math.max(0, Date.now() - Date.parse(authoritativeStartedAt))
+        : interactionNow() - startedAt.current,
+    [authoritativeStartedAt],
+  );
+
   useEffect(() => {
     startedAt.current = interactionNow();
+    if (reducedMotion) {
+      const interval = window.setInterval(
+        () => setPosition(stopBarPosition(specification, elapsed())),
+        250,
+      );
+      return () => window.clearInterval(interval);
+    }
     let frame = 0;
-    const animate = (now: number) => {
-      setPosition(stopBarPosition(specification, now - startedAt.current));
+    const animate = () => {
+      setPosition(stopBarPosition(specification, elapsed()));
       frame = window.requestAnimationFrame(animate);
     };
     frame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(frame);
-  }, [specification]);
+  }, [elapsed, reducedMotion, specification]);
 
   function stop() {
-    const elapsedMs = Math.round(interactionNow() - startedAt.current);
+    const elapsedMs = Math.round(elapsed());
     void onSubmit({
       position: stopBarPosition(specification, elapsedMs),
       elapsedMs,
@@ -1074,13 +1255,28 @@ function StopBarGame({
     <div className="stop-bar-game">
       <Brain aria-hidden="true" />
       <h2>Stop closest to the target.</h2>
-      <div className="stop-track" aria-label="Moving marker and target zone">
+      <div
+        className="stop-track"
+        role="img"
+        aria-label="Moving marker and target zone"
+        aria-describedby={reducedMotion ? "stop-bar-position" : undefined}
+      >
         <span
           className="stop-target"
           style={{ left: `${specification.targetPosition * 100}%` }}
         />
         <span className="stop-marker" style={{ left: `${position * 100}%` }} />
       </div>
+      {reducedMotion && (
+        <p
+          id="stop-bar-position"
+          className="stop-position-text"
+          aria-live="polite"
+        >
+          Marker at {Math.round(position * 100)} percent. Target at{" "}
+          {Math.round(specification.targetPosition * 100)} percent.
+        </p>
+      )}
       <button
         className="button button-lime mini-primary-control"
         type="button"
@@ -1089,7 +1285,12 @@ function StopBarGame({
       >
         STOP
       </button>
-      <p>Press Enter or Space while the button is focused.</p>
+      <p>
+        Press Enter or Space while the button is focused.
+        {reducedMotion
+          ? " Position updates are announced using the same server-timed marker."
+          : ""}
+      </p>
     </div>
   );
 }
@@ -1402,6 +1603,220 @@ function Connection({ state }: { state: RealtimeConnectionState }) {
           ? "Connection issue"
           : "Reconnecting"}
     </div>
+  );
+}
+
+const statisticLabels = {
+  lock_in_points: "Most lock-in points",
+  biggest_point_challenge: "Biggest point challenge victory",
+  action_draws: "Most action draws",
+  mini_game_wins: "Most Mini-Game wins",
+  biggest_comeback: "Biggest comeback",
+} as const;
+
+function ChampionshipPanel({
+  snapshot,
+  pending,
+  reducedMotion,
+  onSubmit,
+}: {
+  snapshot: MatchSnapshot;
+  pending: string | null;
+  reducedMotion: boolean;
+  onSubmit: (result: Record<string, unknown>) => Promise<void>;
+}) {
+  const tiebreaker = snapshot.completionState.tiebreaker;
+  const [now, setNow] = useState(() => Date.parse(snapshot.serverTime));
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  if (!tiebreaker) return null;
+  const finalists = snapshot.players.filter((player) =>
+    tiebreaker.participantIds.includes(player.id),
+  );
+  const startsIn = Math.max(
+    0,
+    Math.ceil((Date.parse(tiebreaker.startsAt) - now) / 1000),
+  );
+
+  return (
+    <section
+      className="championship-shell"
+      aria-labelledby="championship-title"
+    >
+      <div className="championship-heading">
+        <Trophy size={48} aria-hidden="true" />
+        <p className="eyebrow">CHAMPIONSHIP TIEBREAKER</p>
+        <h1 id="championship-title">ONE LAST STOP.</h1>
+        <p>
+          {finalists.map((player) => player.displayName).join(" · ")} tied for
+          first. Scores are frozen; this decides rank only.
+        </p>
+      </div>
+      {tiebreaker.isParticipant ? (
+        tiebreaker.ownSubmitted ? (
+          <div className="championship-waiting" role="status">
+            <Check aria-hidden="true" />
+            <h2>Your result is locked.</h2>
+            <p>
+              Waiting for the other finalists · {tiebreaker.submittedCount}/
+              {tiebreaker.participantCount} received
+            </p>
+          </div>
+        ) : startsIn > 0 ? (
+          <div
+            className="championship-countdown"
+            role="timer"
+            aria-live="polite"
+          >
+            <strong>{startsIn}</strong>
+            <span>Same seed. Same start. Closest marker wins.</span>
+          </div>
+        ) : tiebreaker.specification ? (
+          <StopBarGame
+            specification={tiebreaker.specification}
+            disabled={pending !== null}
+            reducedMotion={reducedMotion}
+            authoritativeStartedAt={tiebreaker.startsAt}
+            onSubmit={onSubmit}
+          />
+        ) : null
+      ) : (
+        <div className="championship-waiting" role="status">
+          <RefreshCcw className="state-spinner" aria-hidden="true" />
+          <h2>Championship in progress</h2>
+          <p>
+            The tied leaders have identical server-seeded conditions. You’ll
+            receive the official result automatically.
+          </p>
+        </div>
+      )}
+      <Leaderboard snapshot={snapshot} />
+    </section>
+  );
+}
+
+function FinalResultsPanel({
+  snapshot,
+  pending,
+  shareFallback,
+  onRematch,
+  onShare,
+  onReturnHome,
+}: {
+  snapshot: MatchSnapshot;
+  pending: string | null;
+  shareFallback: string;
+  onRematch: () => Promise<void>;
+  onShare: () => Promise<void>;
+  onReturnHome: () => Promise<void>;
+}) {
+  const result = snapshot.completionState.result;
+  const winner = snapshot.players.find(
+    (player) => player.id === result?.winnerPlayerId,
+  );
+
+  if (!result) {
+    return (
+      <section className="game-complete-card" role="status">
+        <RefreshCcw className="state-spinner" aria-hidden="true" />
+        <h1>FINALIZING RESULT</h1>
+      </section>
+    );
+  }
+
+  return (
+    <section className="final-results" aria-labelledby="final-result-title">
+      <div className="winner-hero">
+        <Trophy size={54} aria-hidden="true" />
+        <p className="eyebrow">OFFICIAL RESULT</p>
+        <h1 id="final-result-title">
+          {winner?.displayName ?? "CHAMPION"} WINS
+        </h1>
+        <strong>{winner?.score.toLocaleString()} points</strong>
+        <span>
+          {snapshot.completionState.tiebreaker
+            ? `Championship decided by ${result.resolutionMethod.replaceAll("_", " ")}`
+            : "Highest final score"}
+        </span>
+      </div>
+
+      <div className="final-results-grid">
+        <Leaderboard snapshot={snapshot} />
+        <section
+          className="match-statistics"
+          aria-labelledby="match-statistics-title"
+        >
+          <h2 id="match-statistics-title">Match standouts</h2>
+          <dl>
+            {Object.entries(statisticLabels).map(([category, label]) => {
+              const awards = result.statistics.filter(
+                (statistic) => statistic.category === category,
+              );
+              return (
+                <div key={category}>
+                  <dt>{label}</dt>
+                  <dd>
+                    {awards.length
+                      ? `${awards
+                          .map(
+                            (award) =>
+                              snapshot.players.find(
+                                (player) => player.id === award.playerId,
+                              )?.displayName ?? "Player",
+                          )
+                          .join(" & ")} · ${awards[0].value.toLocaleString()}`
+                      : "No qualifying play"}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </section>
+      </div>
+
+      <div className="final-actions">
+        <button
+          className="button button-lime"
+          type="button"
+          disabled={pending !== null}
+          onClick={() => void onRematch()}
+        >
+          <RotateCcw size={18} aria-hidden="true" />
+          {pending === "rematch" ? "Creating lobby…" : "Rematch"}
+        </button>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={() => void onShare()}
+        >
+          <Share2 size={18} aria-hidden="true" /> Share result
+        </button>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={() => void onReturnHome()}
+        >
+          Return home
+        </button>
+      </div>
+      {shareFallback && (
+        <div className="share-fallback">
+          <label htmlFor="share-summary">
+            <Copy size={16} aria-hidden="true" /> Copy this result summary
+          </label>
+          <textarea
+            id="share-summary"
+            readOnly
+            value={shareFallback}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+        </div>
+      )}
+    </section>
   );
 }
 

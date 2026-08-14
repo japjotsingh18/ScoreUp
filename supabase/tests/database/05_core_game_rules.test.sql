@@ -113,10 +113,10 @@ select lives_ok(
 reset role;
 select is((select min(score) from public.players where room_id = current_setting('scoreup.tie_room_id')::uuid and match_participant), 500::bigint, 'tie awards each player their own value');
 select is((select max(score) from public.players where room_id = current_setting('scoreup.tie_room_id')::uuid and match_participant), 500::bigint, 'tie does not award a combined pot');
-select is((select status from public.rooms where id = current_setting('scoreup.tie_room_id')::uuid), 'completed'::public.room_status, 'final round completes the match');
-select is((select current_phase from public.rooms where id = current_setting('scoreup.tie_room_id')::uuid), 'completed'::public.game_phase, 'final match enters completed phase');
-select ok((select tiebreaker_required from public.rooms where id = current_setting('scoreup.tie_room_id')::uuid), 'first-place tie records a future tiebreaker requirement');
-select ok((select public_payload->'winnerPlayerId' = 'null'::jsonb and (public_payload->>'tiebreakerRequired')::boolean from public.game_events where room_id = current_setting('scoreup.tie_room_id')::uuid and event_type = 'match_completed'), 'match event does not falsely declare a tied winner');
+select is((select status from public.rooms where id = current_setting('scoreup.tie_room_id')::uuid), 'in_progress'::public.room_status, 'a tied final round keeps the match active');
+select is((select current_phase from public.rooms where id = current_setting('scoreup.tie_room_id')::uuid), 'championship_tiebreaker'::public.game_phase, 'a tied final match enters the championship phase');
+select ok((select tiebreaker_required from public.rooms where id = current_setting('scoreup.tie_room_id')::uuid), 'first-place tie records a required championship');
+select ok(not exists(select 1 from public.game_events where room_id = current_setting('scoreup.tie_room_id')::uuid and event_type = 'match_completed'), 'no match completion event falsely declares a tied winner');
 select is((select count(*) from public.rounds where room_id = current_setting('scoreup.tie_room_id')::uuid), 1::bigint, 'final completion creates no extra round');
 
 -- Three-player room covers odd rosters, invalid targets, phases, deadline checks, and zero Lock In replay.

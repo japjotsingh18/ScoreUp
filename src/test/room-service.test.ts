@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
-import { createRoom, joinRoom } from "../lib/supabase/rooms";
+import { createRoom, joinRoom, requestRematch } from "../lib/supabase/rooms";
 
 const lobby = {
   room: {
@@ -83,5 +83,18 @@ describe("room service", () => {
       password: null,
     });
     expect(result.room).not.toHaveProperty("passwordHash");
+  });
+
+  it("requests a rematch with only the completed room and replay key", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: lobby, error: null });
+    await requestRematch(
+      clientWithRpc(rpc),
+      lobby.room.id,
+      "c13a0e94-8af4-40fb-8772-65826225accd",
+    );
+    expect(rpc).toHaveBeenCalledWith("request_rematch", {
+      p_room_id: lobby.room.id,
+      p_idempotency_key: "c13a0e94-8af4-40fb-8772-65826225accd",
+    });
   });
 });

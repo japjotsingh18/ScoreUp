@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, KeyRound } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import {
   joinRoomInputSchema,
@@ -16,6 +17,7 @@ export function JoinGameForm({
   initialCode?: string;
   onSuccess?: (code: string, name: string) => void;
 }) {
+  const router = useRouter();
   const [code, setCode] = useState(initialCode.toUpperCase());
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -52,9 +54,7 @@ export function JoinGameForm({
     setPending(true);
     try {
       const lobby = await joinRoom(auth.client, parsed.data);
-      window.location.assign(
-        `/lobby?room=${encodeURIComponent(lobby.room.id)}`,
-      );
+      router.push(`/lobby?room=${encodeURIComponent(lobby.room.id)}`);
     } catch (cause) {
       if (cause instanceof RoomOperationError)
         setError(roomErrorMessages[cause.code]);

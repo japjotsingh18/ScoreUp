@@ -4,13 +4,15 @@
 
 ScoreUp is a mobile-first, real-time multiplayer party game for 2–10 players. Hidden point cards create tension, action cards disrupt the leaderboard, and each player holds one skill-based Mini-Game Challenge that can turn a match at exactly the right moment.
 
-> Project status: **Milestone 5 Mini-Game Challenges is implemented.** ScoreUp now includes the server-authoritative challenge queue, escrow settlement, three seeded games, timeout/tie handling, and participant-safe recovery. Championship tiebreakers remain reserved for Milestone 6.
+> Project status: **Milestone 6 Game Completion and Polish is implemented.** ScoreUp now reaches an authoritative final result, resolves tied leaders without changing scores, records rankings and match awards, supports fresh-room rematches, and includes verified two-context browser coverage. Deployment remains Milestone 7 work.
 
 ## Screenshots
 
-Screenshots and hosted preview links will be added during the final deployment milestone.
+The final-results screen below was captured by the real local two-client Playwright completion journey; it is not a mockup.
 
-## Implemented features through Milestone 5
+![ScoreUp Milestone 6 final results](docs/screenshots/milestone-6-final-results.png)
+
+## Implemented features through Milestone 6
 
 - Restored-or-created anonymous Supabase browser sessions with explicit unconfigured, loading, failure, and retry states
 - Atomic, idempotent room creation and serialized room joining through authenticated Postgres RPCs
@@ -34,6 +36,12 @@ Screenshots and hosted preview links will be added during the final deployment m
 - Transactional Half/All matched-stake escrow, signed deduction/award/refund ledger entries, non-negative balances, and idempotent settlement
 - Secure server-selected Stop the Bar, Memory Sequence, and Find the Different Symbol specifications with synchronized starts and compact validated submissions
 - Ordinary-tie Stop the Bar, repeated-tie secure random fallback, database-time timeouts, private participant snapshots, and reconnect-safe UI
+- Idempotent `finalizing` → championship-or-completed flow with immutable final results, competition ranking, and preserved tied scores
+- Shared server-seeded championship Stop the Bar for tied leaders, with skill, timing, secure-fallback, and timeout outcomes that alter rank only
+- Reproducible server-side Lock In, point challenge, Action draw, Mini-Game win, and comeback awards with ties and zero-qualifier handling
+- New-identity rematch lobbies that retain room settings and roster while isolating old commands, submissions, events, and match history
+- Responsive final celebration, final leaderboard, public-safe result sharing, Return Home cleanup, sound controls, and persistent reduced-motion controls
+- Playwright Chromium coverage with two isolated anonymous sessions, local-only provisioning, axe serious/critical checks, reconnect, timeout, rematch, and unauthorized-view assertions
 
 ## Game rules
 
@@ -80,15 +88,17 @@ flowchart LR
     M -->|FIFO queue remains| M
     M --> S[Round summary]
     S -->|rounds remain| D
-    S -->|final round| F[Finalize + tiebreak]
-    F --> C[Completed]
+    S -->|final round| F[Finalizing]
+    F -->|leaders tied| T[Championship tiebreaker]
+    F -->|unique leader| C[Completed]
+    T --> C
 ```
 
 Every implemented transition is a versioned, idempotent server command with phase, actor, deadline, and eligibility validation. The action phase cannot close while a persisted draw awaits a target.
 
 ## Database design
 
-Milestone 5 adds normalized challenges/submissions, private secure specifications, participant locks, score escrow references, and participant-specific Mini-Game snapshots. See [docs/database-schema.md](docs/database-schema.md), [Action Card decisions](docs/milestone-4.md), and [Mini-Game decisions](docs/milestone-5.md).
+Milestone 6 adds championship attempts/submissions, immutable match results/rankings/awards, and rematch lineage. See [docs/database-schema.md](docs/database-schema.md), [Mini-Game decisions](docs/milestone-5.md), and [completion decisions](docs/milestone-6.md).
 
 ## Security approach
 
@@ -101,10 +111,11 @@ Milestone 5 adds normalized challenges/submissions, private secure specification
 - Room codes locate rooms but never grant control of an existing player
 - Passwords are slow-hashed and server-only; service-role credentials never reach Vite
 - Replays, duplicate actions, stale phases, and impossible mini-game results are rejected
+- Final ranks/statistics are write-protected, raw championship seeds stay private, and rematches cannot reuse old room-scoped commands
 
 ## Realtime strategy
 
-Realtime carries only private `{ changed: true }` invalidation hints on room-scoped lobby and game channels. It never carries private card values, password material, or auth identifiers. Authorized clients refetch actor-specific snapshots, so dropped or coalesced messages cannot make an event stream authoritative.
+Realtime carries only private `{ changed: true }` invalidation hints on room-scoped lobby and game channels. It never carries private card values, password material, auth identifiers, results, or seeds. Authorized clients refetch actor-specific snapshots, so dropped or coalesced messages cannot make an event stream authoritative. Heartbeat-only timestamp writes are deliberately suppressed from game broadcasts to prevent a cross-client refetch loop; visible connection changes still broadcast.
 
 ## Local setup
 
@@ -116,6 +127,7 @@ cp .env.example .env.local
 npm run db:start
 npm run db:reset
 npm run test:db
+npx playwright install chromium
 npm run dev
 ```
 
@@ -129,13 +141,16 @@ For a hosted project: enable anonymous sign-ins in Supabase Auth; link the CLI w
 npm run typecheck
 npm run lint
 npm test
+npm run test:e2e
 npm run db:lint
 npm run test:db
 npm run format:check
 npm run build
 ```
 
-The TypeScript suite covers configuration, session restoration, strict lobby/game/Mini-Game contracts, compact commands, deterministic game helpers, accessible challenge UI, RPC error mapping, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, the complete earlier game, queue conflicts/FIFO order, stake escrow, all three Mini-Games, validation, ties, timeouts, privacy, and replay safety. Browser E2E was not added in Milestone 5 because no browser-test dependency was already configured.
+The TypeScript suite covers configuration, session restoration, strict lobby/game/completion contracts, compact commands, preferences, accessible challenge/final UI, RPC error mapping, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, finalization, ranking, statistics, championship outcomes, rematch isolation, queue/escrow rules, privacy, and replay safety. Playwright runs real Chromium against local Supabase with two isolated anonymous contexts; its provisioning helper refuses non-loopback application origins and keeps all database-owner access outside browser code.
+
+`npm audit --omit=dev` is clean after the non-major Next.js 16.3.1 toolchain update, which also resolves the affected transitive Nano ID, PostCSS, and Sharp versions. No forced audit remediation was used.
 
 ## Deployment
 

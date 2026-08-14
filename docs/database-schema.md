@@ -1,6 +1,6 @@
 # Database design
 
-Postgres is the source of truth. Milestone 5 extends the verified lobby, Core Game, and Action Card state with normalized Mini-Game Challenges. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
+Postgres is the source of truth. Milestone 6 extends the verified lobby, Core Game, Action Card, and Mini-Game state with authoritative completion, championship, statistics, and rematch history. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
 
 ## Implemented in Milestone 2
 
@@ -112,6 +112,20 @@ RLS exposes only the caller's own submission. Validation records accepted/reject
 
 A short-lived server-only bucket table keys attempts by operation, auth user, and room. Scheduled cleanup removes expired rate buckets and abandoned unstarted rooms; completed match history follows a documented retention window. Auth-user deletion cascades only after room-history requirements are considered.
 
+## Implemented in Milestone 6
+
+### Championship state
+
+`championship_tiebreakers` stores one room attempt, status, authoritative start/deadline, winner, and resolution method. `championship_participants` freezes only the highest-score tied players. `private.championship_specs` stores the shared 32-byte seed, participant specification, and expected target; `championship_submissions` stores each finalist's compact validated result and replay key. No championship operation changes a score-ledger balance.
+
+### Immutable result and awards
+
+`match_results` stores one winner, resolution method, completion timestamp, settings snapshot, and source championship. `match_result_players` freezes every final score, competition rank, display order, join order, and championship placement. Lower equal scores receive the same rank; join order only stabilizes display order. `match_stat_awards` stores zero or more tied winners for each documented category, so a non-qualifying category remains empty rather than inventing an award.
+
+### Rematch lineage
+
+`rematches` uniquely links a completed source room to one new lobby and its idempotency key. The transaction copies the private-room hash, settings, connected roster, and host assignment into a new room identity with zeroed gameplay state and every player not ready. Old rounds, cards, receipts, submissions, events, result, and Realtime topic remain attached to the source room.
+
 ## Core Game transaction boundaries
 
 - `start_room`: freeze connected roster, zero scores/stats, calculate future allowances, create/deal round one, and return an actor-safe snapshot
@@ -142,3 +156,13 @@ Point-decision order is generated only after every participant has responded and
 - `get_mini_game_snapshot`: returns public-safe room status plus full challenge/specification details only to either participant and never returns raw seeds or expected answers.
 
 When an ordinary game ties, the same escrow enters one seeded Stop the Bar attempt without another deduction. A repeated tie uses secure random selection. Round summary begins only after no queued or active challenge remains.
+
+## Completion transaction boundaries
+
+- `private.finalize_match`: locks the room, records `finalizing`, calculates the highest-score set, and either completes a unique result or creates exactly one shared championship.
+- `submit_championship_result`: accepts only the caller finalist's compact position/time, validates the server window and target distance, and resolves skill, timing, or secure fallback exactly once when possible.
+- `process_expired_championship`: resolves a sole valid submission after the database deadline or uses secure fallback when required, preventing a disconnected finalist from deadlocking completion.
+- `private.complete_match`: freezes result, competition rankings, five reproducible statistic categories, completion time, and public event before moving the room to `completed`.
+- `request_rematch`: permits completed-match participants to obtain the same one new lobby while rejecting stale cross-room replay.
+
+Locally, `npm run db:reset` rebuilds every migration in order. Before applying the completion migration to a hosted database, take and verify a snapshot. If it fails before clients use the new phases, restore that snapshot; once completion/rematch records exist, use a corrective forward migration or a full snapshot restore rather than dropping history or weakening RLS.

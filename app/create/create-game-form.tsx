@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, LockKeyhole, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import {
   createRoomInputSchema,
@@ -14,6 +15,7 @@ export function CreateGameForm({
 }: {
   onSuccess?: (name: string) => void;
 }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [players, setPlayers] = useState("6");
   const [rounds, setRounds] = useState("8");
@@ -62,9 +64,7 @@ export function CreateGameForm({
     setPending(true);
     try {
       const lobby = await createRoom(auth.client, parsed.data);
-      window.location.assign(
-        `/lobby?room=${encodeURIComponent(lobby.room.id)}`,
-      );
+      router.push(`/lobby?room=${encodeURIComponent(lobby.room.id)}`);
     } catch (cause) {
       if (cause instanceof RoomOperationError)
         setError(roomErrorMessages[cause.code]);

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { lockInInputSchema } from "../../game/core/contracts";
 import {
   createRoomInputSchema,
   joinRoomInputSchema,
@@ -145,6 +146,18 @@ export function heartbeatRoom(client: SupabaseClient, roomId: string) {
   const parsed = startGameInputSchema.parse({ roomId });
   return runSnapshotRpc(client, "heartbeat_room", {
     p_room_id: parsed.roomId,
+  });
+}
+
+export function requestRematch(
+  client: SupabaseClient,
+  roomId: string,
+  idempotencyKey: string,
+) {
+  const parsed = lockInInputSchema.parse({ roomId, idempotencyKey });
+  return runSnapshotRpc(client, "request_rematch", {
+    p_room_id: parsed.roomId,
+    p_idempotency_key: parsed.idempotencyKey,
   });
 }
 

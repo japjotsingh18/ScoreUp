@@ -98,6 +98,8 @@ export const gamePhases = [
   "point_decisions",
   "mini_game_resolution",
   "round_summary",
+  "finalizing",
+  "championship_tiebreaker",
   "completed",
 ] as const;
 export type GamePhase = (typeof gamePhases)[number];
@@ -130,6 +132,11 @@ export const gameEventTypes = [
   "mini_game_resolved",
   "mini_game_queue_advanced",
   "mini_game_phase_completed",
+  "match_finalizing",
+  "championship_tiebreaker_started",
+  "championship_submission_received",
+  "championship_resolved",
+  "rematch_created",
   "turn_started",
   "player_locked_in",
   "challenge_started",
@@ -338,6 +345,49 @@ export type RoundSummary = {
   }>;
 };
 
+export type ChampionshipResolutionMethod =
+  "skill" | "timing" | "timeout" | "secure_fallback";
+
+export type ChampionshipSnapshot = {
+  status: "active" | "resolved";
+  isParticipant: boolean;
+  participantIds: string[];
+  startsAt: string;
+  submissionDeadline: string;
+  specification: StopBarSpecification | null;
+  ownSubmitted: boolean;
+  submittedCount: number;
+  participantCount: number;
+  winnerPlayerId: string | null;
+  resolutionMethod: ChampionshipResolutionMethod | null;
+};
+
+export const matchStatCategories = [
+  "lock_in_points",
+  "biggest_point_challenge",
+  "action_draws",
+  "mini_game_wins",
+  "biggest_comeback",
+] as const;
+export type MatchStatCategory = (typeof matchStatCategories)[number];
+
+export type MatchResultSnapshot = {
+  winnerPlayerId: string;
+  resolutionMethod: ChampionshipResolutionMethod;
+  completedAt: string;
+  rankings: Array<{
+    playerId: string;
+    score: number;
+    rank: number;
+    displayOrder: number;
+  }>;
+  statistics: Array<{
+    category: MatchStatCategory;
+    playerId: string;
+    value: number;
+  }>;
+};
+
 export type MatchSnapshot = {
   room: {
     id: string;
@@ -371,6 +421,12 @@ export type MatchSnapshot = {
   privatePlayer: PrivatePlayerState;
   actionState: ActionState;
   miniGameState: MiniGameState;
+  completionState: {
+    phase: GamePhase;
+    tiebreaker: ChampionshipSnapshot | null;
+    result: MatchResultSnapshot | null;
+    rematchRoomId: string | null;
+  };
   eligibleChallengeTargetIds: string[];
   roundSummaries: RoundSummary[];
   recentEvents: PublicGameEvent[];
@@ -581,6 +637,79 @@ function parseSummary(value: unknown): RoundSummary {
   };
 }
 
+const championshipResolutionMethods = [
+  "skill",
+  "timing",
+  "timeout",
+  "secure_fallback",
+] as const;
+
+function parseCompletionState(
+  value: unknown,
+): MatchSnapshot["completionState"] {
+  const state = object(value);
+  const tiebreaker =
+    state.tiebreaker === null ? null : object(state.tiebreaker);
+  const result = state.result === null ? null : object(state.result);
+  return {
+    phase: oneOf(state.phase, gamePhases),
+    tiebreaker: tiebreaker
+      ? {
+          status: oneOf(tiebreaker.status, ["active", "resolved"] as const),
+          isParticipant: boolean(tiebreaker.isParticipant),
+          participantIds: array(tiebreaker.participantIds).map(uuid),
+          startsAt: date(tiebreaker.startsAt),
+          submissionDeadline: date(tiebreaker.submissionDeadline),
+          specification:
+            tiebreaker.specification === null
+              ? null
+              : (() => {
+                  const parsed = parseMiniGameSpecification(
+                    tiebreaker.specification,
+                  );
+                  if (parsed.type !== "stop_bar") throw new GameContractError();
+                  return parsed;
+                })(),
+          ownSubmitted: boolean(tiebreaker.ownSubmitted),
+          submittedCount: integer(tiebreaker.submittedCount),
+          participantCount: integer(tiebreaker.participantCount),
+          winnerPlayerId: nullable(tiebreaker.winnerPlayerId, uuid),
+          resolutionMethod: nullable(tiebreaker.resolutionMethod, (item) =>
+            oneOf(item, championshipResolutionMethods),
+          ),
+        }
+      : null,
+    result: result
+      ? {
+          winnerPlayerId: uuid(result.winnerPlayerId),
+          resolutionMethod: oneOf(
+            result.resolutionMethod,
+            championshipResolutionMethods,
+          ),
+          completedAt: date(result.completedAt),
+          rankings: array(result.rankings).map((item) => {
+            const ranking = object(item);
+            return {
+              playerId: uuid(ranking.playerId),
+              score: integer(ranking.score),
+              rank: integer(ranking.rank),
+              displayOrder: integer(ranking.displayOrder),
+            };
+          }),
+          statistics: array(result.statistics).map((item) => {
+            const statistic = object(item);
+            return {
+              category: oneOf(statistic.category, matchStatCategories),
+              playerId: uuid(statistic.playerId),
+              value: integer(statistic.value),
+            };
+          }),
+        }
+      : null,
+    rematchRoomId: nullable(state.rematchRoomId, uuid),
+  };
+}
+
 export const matchSnapshotSchema = schema<MatchSnapshot>((value) => {
   const snapshot = object(value);
   const room = object(snapshot.room);
@@ -640,6 +769,7 @@ export const matchSnapshotSchema = schema<MatchSnapshot>((value) => {
     },
     actionState: parseActionState(snapshot.actionState),
     miniGameState: parseMiniGameState(snapshot.miniGameState),
+    completionState: parseCompletionState(snapshot.completionState),
     eligibleChallengeTargetIds: array(snapshot.eligibleChallengeTargetIds).map(
       uuid,
     ),
@@ -760,6 +890,24 @@ export const miniGameSubmissionInputSchema = schema<{
   };
 });
 
+export const championshipSubmissionInputSchema = schema<{
+  roomId: string;
+  result: { position: number; elapsedMs: number };
+  idempotencyKey: string;
+}>((value) => {
+  const input = object(value);
+  const result = object(input.result);
+  const position = number(result.position);
+  const elapsedMs = integer(result.elapsedMs);
+  if (position < 0 || position > 1 || elapsedMs < 0 || elapsedMs > 10000)
+    throw new GameContractError();
+  return {
+    roomId: uuid(input.roomId),
+    result: { position, elapsedMs },
+    idempotencyKey: uuid(input.idempotencyKey),
+  };
+});
+
 export const gameErrorCodes = [
   "NOT_MATCH_PARTICIPANT",
   "MATCH_NOT_FOUND",
@@ -790,6 +938,11 @@ export const gameErrorCodes = [
   "MINI_GAME_DEADLINE_EXPIRED",
   "MINI_GAME_ALREADY_SUBMITTED",
   "INSUFFICIENT_SCORE",
+  "CHAMPIONSHIP_NOT_STARTED",
+  "NOT_CHAMPIONSHIP_PARTICIPANT",
+  "CHAMPIONSHIP_ALREADY_SUBMITTED",
+  "DEADLINE_EXPIRED",
+  "MATCH_NOT_COMPLETED",
   "OPERATION_TIMEOUT",
   "UNKNOWN_ERROR",
 ] as const;
@@ -834,6 +987,12 @@ export const gameErrorMessages: Record<GameErrorCode, string> = {
   MINI_GAME_ALREADY_SUBMITTED:
     "Your result for this attempt is already locked.",
   INSUFFICIENT_SCORE: "The matched stake is no longer available.",
+  CHAMPIONSHIP_NOT_STARTED: "Wait for the synchronized championship start.",
+  NOT_CHAMPIONSHIP_PARTICIPANT:
+    "Only tied first-place finalists can submit this championship result.",
+  CHAMPIONSHIP_ALREADY_SUBMITTED: "Your championship result is already locked.",
+  DEADLINE_EXPIRED: "The championship deadline has expired.",
+  MATCH_NOT_COMPLETED: "The final result is not ready for a rematch.",
   OPERATION_TIMEOUT: "The request took too long. Check your connection.",
   UNKNOWN_ERROR: "The game could not process that action. Please retry.",
 };
