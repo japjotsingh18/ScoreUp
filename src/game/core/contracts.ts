@@ -96,6 +96,7 @@ export const gamePhases = [
   "dealing",
   "action_choice",
   "point_decisions",
+  "mini_game_resolution",
   "round_summary",
   "completed",
 ] as const;
@@ -122,6 +123,13 @@ export const gameEventTypes = [
   "action_skipped",
   "action_auto_skipped",
   "action_phase_completed",
+  "mini_game_requested",
+  "mini_game_started",
+  "mini_game_submission_received",
+  "mini_game_tiebreaker_started",
+  "mini_game_resolved",
+  "mini_game_queue_advanced",
+  "mini_game_phase_completed",
   "turn_started",
   "player_locked_in",
   "challenge_started",
@@ -192,6 +200,85 @@ export type ActionState = {
     createdAt: string;
   } | null;
   draw: ActionDrawSnapshot | null;
+};
+
+export const miniGameTypes = [
+  "stop_bar",
+  "memory_sequence",
+  "different_symbol",
+] as const;
+export type MiniGameType = (typeof miniGameTypes)[number];
+export type MiniGameStakeType = "half" | "all";
+export type MiniGameChallengeStatus =
+  | "queued"
+  | "active"
+  | "tiebreaker_active"
+  | "resolved"
+  | "cancelled"
+  | "refunded";
+export type MiniGameResolutionMethod =
+  | "game_result"
+  | "opponent_timeout"
+  | "opponent_invalid"
+  | "tiebreaker_result"
+  | "random_fallback"
+  | "server_refund";
+
+export type StopBarSpecification = {
+  type: "stop_bar";
+  targetPosition: number;
+  markerSpeed: number;
+  initialDirection: 1 | -1;
+  maximumDurationMs: number;
+};
+export type MemorySequenceSpecification = {
+  type: "memory_sequence";
+  symbols: Array<"star" | "circle" | "triangle" | "diamond">;
+  sequence: Array<"star" | "circle" | "triangle" | "diamond">;
+  displayIntervalMs: number;
+  maximumDurationMs: number;
+};
+export type DifferentSymbolSpecification = {
+  type: "different_symbol";
+  gridSize: number;
+  cells: Array<"circle" | "diamond">;
+  incorrectTapPenaltyMs: number;
+  maximumDurationMs: number;
+};
+export type MiniGameSpecification =
+  | StopBarSpecification
+  | MemorySequenceSpecification
+  | DifferentSymbolSpecification;
+
+export type MiniGameChallengeSnapshot = {
+  id: string;
+  status: MiniGameChallengeStatus;
+  queuePosition: number;
+  challengerPlayerId: string;
+  opponentPlayerId: string;
+  isChallenger: boolean;
+  stakeType: MiniGameStakeType;
+  stakePerPlayer: number | null;
+  pot: number | null;
+  gameType: MiniGameType | null;
+  attempt: 1 | 2;
+  startsAt: string | null;
+  submissionDeadline: string | null;
+  specification: MiniGameSpecification | null;
+  ownSubmitted: boolean;
+  opponentSubmitted: boolean;
+  winnerPlayerId: string | null;
+  resolutionMethod: MiniGameResolutionMethod | null;
+  completedAt: string | null;
+  cancellationReason: string | null;
+};
+
+export type MiniGameState = {
+  tokenAvailable: boolean;
+  eligibleOpponentIds: string[];
+  roomQueueCount: number;
+  roomHasActiveChallenge: boolean;
+  challenge: MiniGameChallengeSnapshot | null;
 };
 
 export type MatchPlayer = {
@@ -283,6 +370,7 @@ export type MatchSnapshot = {
   };
   privatePlayer: PrivatePlayerState;
   actionState: ActionState;
+  miniGameState: MiniGameState;
   eligibleChallengeTargetIds: string[];
   roundSummaries: RoundSummary[];
   recentEvents: PublicGameEvent[];
@@ -355,6 +443,106 @@ function parseActionState(value: unknown): ActionState {
           publicResult: object(draw.publicResult),
           drawnAt: date(draw.drawnAt),
           resolvedAt: nullable(draw.resolvedAt, date),
+        }
+      : null,
+  };
+}
+
+const miniSymbols = ["star", "circle", "triangle", "diamond"] as const;
+
+function number(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new GameContractError();
+  return value;
+}
+
+function parseMiniGameSpecification(value: unknown): MiniGameSpecification {
+  const specification = object(value);
+  const type = oneOf(specification.type, miniGameTypes);
+  if (type === "stop_bar") {
+    return {
+      type,
+      targetPosition: number(specification.targetPosition),
+      markerSpeed: number(specification.markerSpeed),
+      initialDirection: oneOf(specification.initialDirection, [1, -1] as const),
+      maximumDurationMs: integer(specification.maximumDurationMs),
+    };
+  }
+  if (type === "memory_sequence") {
+    return {
+      type,
+      symbols: array(specification.symbols).map((item) =>
+        oneOf(item, miniSymbols),
+      ),
+      sequence: array(specification.sequence).map((item) =>
+        oneOf(item, miniSymbols),
+      ),
+      displayIntervalMs: integer(specification.displayIntervalMs),
+      maximumDurationMs: integer(specification.maximumDurationMs),
+    };
+  }
+  return {
+    type,
+    gridSize: integer(specification.gridSize),
+    cells: array(specification.cells).map((item) =>
+      oneOf(item, ["circle", "diamond"] as const),
+    ),
+    incorrectTapPenaltyMs: integer(specification.incorrectTapPenaltyMs),
+    maximumDurationMs: integer(specification.maximumDurationMs),
+  };
+}
+
+function parseMiniGameState(value: unknown): MiniGameState {
+  const state = object(value);
+  const challenge = state.challenge === null ? null : object(state.challenge);
+  return {
+    tokenAvailable: boolean(state.tokenAvailable),
+    eligibleOpponentIds: array(state.eligibleOpponentIds).map(uuid),
+    roomQueueCount: integer(state.roomQueueCount),
+    roomHasActiveChallenge: boolean(state.roomHasActiveChallenge),
+    challenge: challenge
+      ? {
+          id: uuid(challenge.id),
+          status: oneOf(challenge.status, [
+            "queued",
+            "active",
+            "tiebreaker_active",
+            "resolved",
+            "cancelled",
+            "refunded",
+          ] as const),
+          queuePosition: integer(challenge.queuePosition),
+          challengerPlayerId: uuid(challenge.challengerPlayerId),
+          opponentPlayerId: uuid(challenge.opponentPlayerId),
+          isChallenger: boolean(challenge.isChallenger),
+          stakeType: oneOf(challenge.stakeType, ["half", "all"] as const),
+          stakePerPlayer: nullable(challenge.stakePerPlayer, integer),
+          pot: nullable(challenge.pot, integer),
+          gameType: nullable(challenge.gameType, (item) =>
+            oneOf(item, miniGameTypes),
+          ),
+          attempt: oneOf(challenge.attempt, [1, 2] as const),
+          startsAt: nullable(challenge.startsAt, date),
+          submissionDeadline: nullable(challenge.submissionDeadline, date),
+          specification:
+            challenge.specification === null
+              ? null
+              : parseMiniGameSpecification(challenge.specification),
+          ownSubmitted: boolean(challenge.ownSubmitted),
+          opponentSubmitted: boolean(challenge.opponentSubmitted),
+          winnerPlayerId: nullable(challenge.winnerPlayerId, uuid),
+          resolutionMethod: nullable(challenge.resolutionMethod, (item) =>
+            oneOf(item, [
+              "game_result",
+              "opponent_timeout",
+              "opponent_invalid",
+              "tiebreaker_result",
+              "random_fallback",
+              "server_refund",
+            ] as const),
+          ),
+          completedAt: nullable(challenge.completedAt, date),
+          cancellationReason: nullable(challenge.cancellationReason, string),
         }
       : null,
   };
@@ -451,6 +639,7 @@ export const matchSnapshotSchema = schema<MatchSnapshot>((value) => {
       miniGameTokenUsed: boolean(privatePlayer.miniGameTokenUsed),
     },
     actionState: parseActionState(snapshot.actionState),
+    miniGameState: parseMiniGameState(snapshot.miniGameState),
     eligibleChallengeTargetIds: array(snapshot.eligibleChallengeTargetIds).map(
       uuid,
     ),
@@ -539,6 +728,38 @@ export const actionTimeoutInputSchema = schema<{
   };
 });
 
+export const miniGameChallengeInputSchema = schema<{
+  roomId: string;
+  opponentPlayerId: string;
+  stakeType: MiniGameStakeType;
+  idempotencyKey: string;
+}>((value) => {
+  const input = object(value);
+  return {
+    roomId: uuid(input.roomId),
+    opponentPlayerId: uuid(input.opponentPlayerId),
+    stakeType: oneOf(input.stakeType, ["half", "all"] as const),
+    idempotencyKey: uuid(input.idempotencyKey),
+  };
+});
+
+export const miniGameSubmissionInputSchema = schema<{
+  roomId: string;
+  challengeId: string;
+  result: Record<string, unknown>;
+  idempotencyKey: string;
+}>((value) => {
+  const input = object(value);
+  const result = object(input.result);
+  if (JSON.stringify(result).length > 512) throw new GameContractError();
+  return {
+    roomId: uuid(input.roomId),
+    challengeId: uuid(input.challengeId),
+    result,
+    idempotencyKey: uuid(input.idempotencyKey),
+  };
+});
+
 export const gameErrorCodes = [
   "NOT_MATCH_PARTICIPANT",
   "MATCH_NOT_FOUND",
@@ -558,6 +779,17 @@ export const gameErrorCodes = [
   "ACTION_ALREADY_RESOLVED",
   "TARGET_DEADLINE_EXPIRED",
   "NO_ELIGIBLE_TARGET",
+  "MINI_GAME_TOKEN_USED",
+  "SELF_MINI_GAME_CHALLENGE",
+  "ZERO_STAKE",
+  "MINI_GAME_PARTICIPANT_BUSY",
+  "MINI_GAME_NOT_FOUND",
+  "NOT_MINI_GAME_PARTICIPANT",
+  "CHALLENGE_NOT_ACTIVE",
+  "MINI_GAME_NOT_STARTED",
+  "MINI_GAME_DEADLINE_EXPIRED",
+  "MINI_GAME_ALREADY_SUBMITTED",
+  "INSUFFICIENT_SCORE",
   "OPERATION_TIMEOUT",
   "UNKNOWN_ERROR",
 ] as const;
@@ -585,6 +817,23 @@ export const gameErrorMessages: Record<GameErrorCode, string> = {
   TARGET_DEADLINE_EXPIRED:
     "Target selection expired. The server is choosing securely…",
   NO_ELIGIBLE_TARGET: "No eligible target remains for this action card.",
+  MINI_GAME_TOKEN_USED:
+    "Your one Mini-Game Challenge token has already been used.",
+  SELF_MINI_GAME_CHALLENGE:
+    "Choose another player for the Mini-Game Challenge.",
+  ZERO_STAKE: "Both players need available score for a matched stake.",
+  MINI_GAME_PARTICIPANT_BUSY:
+    "One of those players is already in this round’s Mini-Game queue.",
+  MINI_GAME_NOT_FOUND: "That Mini-Game Challenge is no longer available.",
+  NOT_MINI_GAME_PARTICIPANT:
+    "Only the two challenged players can submit this result.",
+  CHALLENGE_NOT_ACTIVE: "That Mini-Game Challenge is not active.",
+  MINI_GAME_NOT_STARTED: "Wait for the synchronized Mini-Game start.",
+  MINI_GAME_DEADLINE_EXPIRED:
+    "The Mini-Game deadline expired. Processing the result…",
+  MINI_GAME_ALREADY_SUBMITTED:
+    "Your result for this attempt is already locked.",
+  INSUFFICIENT_SCORE: "The matched stake is no longer available.",
   OPERATION_TIMEOUT: "The request took too long. Check your connection.",
   UNKNOWN_ERROR: "The game could not process that action. Please retry.",
 };

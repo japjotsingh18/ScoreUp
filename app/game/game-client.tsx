@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  Brain,
   Check,
   Clock3,
   Crown,
+  Gamepad2,
   Radio,
   RefreshCcw,
   ShieldAlert,
@@ -13,14 +15,22 @@ import {
   Trophy,
   UserRound,
   WifiOff,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   gameErrorMessages,
   type MatchSnapshot,
+  type MiniGameSpecification,
+  type MiniGameStakeType,
   type PublicGameEvent,
 } from "../../src/game/core/contracts";
+import {
+  correctConsecutiveSymbols,
+  previewMatchedStake,
+  stopBarPosition,
+} from "../../src/game/minigames/domain";
 import { useAnonymousSession } from "../../src/hooks/use-anonymous-session";
 import {
   advanceRound,
@@ -31,6 +41,9 @@ import {
   processTimeout,
   processActionPhaseTimeout,
   processActionTargetTimeout,
+  processMiniGameTimeout,
+  requestMiniGameChallenge,
+  submitMiniGameResult,
   submitActionChoice,
   submitActionTarget,
 } from "../../src/lib/supabase/game";
@@ -50,6 +63,10 @@ function secondsUntil(deadline: string | null) {
   return deadline
     ? Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000))
     : 0;
+}
+
+function interactionNow() {
+  return performance.now();
 }
 
 function eventCopy(event: PublicGameEvent, snapshot: MatchSnapshot) {
@@ -92,6 +109,20 @@ function eventCopy(event: PublicGameEvent, snapshot: MatchSnapshot) {
       return event.payload.tiebreakerRequired
         ? "Match complete with a tie for first."
         : "Match complete.";
+    case "mini_game_requested":
+      return `${actor ?? "A player"} queued a Mini-Game Challenge.`;
+    case "mini_game_started":
+      return "A Mini-Game Challenge started.";
+    case "mini_game_submission_received":
+      return `${actor ?? "A player"} submitted a Mini-Game result.`;
+    case "mini_game_tiebreaker_started":
+      return "A tied Mini-Game moved to Stop the Bar.";
+    case "mini_game_resolved":
+      return "A Mini-Game Challenge was settled.";
+    case "mini_game_queue_advanced":
+      return "The Mini-Game queue advanced.";
+    case "mini_game_phase_completed":
+      return "All queued Mini-Game Challenges are complete.";
   }
 }
 
@@ -102,6 +133,8 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   const [loading, setLoading] = useState(Boolean(roomId));
   const [pending, setPending] = useState<string | null>(null);
   const [targetId, setTargetId] = useState("");
+  const [miniOpponentId, setMiniOpponentId] = useState("");
+  const [miniStake, setMiniStake] = useState<MiniGameStakeType>("half");
   const [error, setError] = useState(
     roomId
       ? ""
@@ -115,6 +148,7 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   const timeoutAttempt = useRef("");
   const summaryAttempt = useRef("");
   const actionTimeoutAttempt = useRef("");
+  const miniTimeoutAttempt = useRef("");
 
   const applySnapshot = useCallback((next: MatchSnapshot) => {
     setSnapshot(next);
@@ -133,6 +167,9 @@ export function GameClient({ roomId }: { roomId: string | null }) {
       )?.includes(current)
         ? current
         : "",
+    );
+    setMiniOpponentId((current) =>
+      next.miniGameState.eligibleOpponentIds.includes(current) ? current : "",
     );
   }, []);
 
@@ -227,6 +264,27 @@ export function GameClient({ roomId }: { roomId: string | null }) {
             applySnapshot(next);
             setNotice("The expired turn was locked in by the server.");
           })
+          .catch((cause) => {
+            setError(messageFor(cause));
+            void refresh();
+          })
+          .finally(() => setPending(null));
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (snapshot.room.phase === "mini_game_resolution") {
+      const challenge = snapshot.miniGameState.challenge;
+      const attempt = `${snapshot.room.currentRound}:${challenge?.id ?? "room"}:${challenge?.attempt ?? 0}`;
+      if (miniTimeoutAttempt.current === attempt) return;
+      miniTimeoutAttempt.current = attempt;
+      const timer = window.setTimeout(() => {
+        setPending("mini-timeout");
+        void processMiniGameTimeout(
+          authClient,
+          snapshot.room.id,
+          crypto.randomUUID(),
+        )
+          .then(applySnapshot)
           .catch((cause) => {
             setError(messageFor(cause));
             void refresh();
@@ -368,6 +426,71 @@ export function GameClient({ roomId }: { roomId: string | null }) {
     }
   }
 
+  async function chooseMiniGameChallenge() {
+    if (auth.status !== "ready" || !snapshot || !miniOpponentId) return;
+    const opponent = snapshot.players.find(
+      (player) => player.id === miniOpponentId,
+    );
+    if (!opponent) return;
+    const preview = previewMatchedStake(
+      self?.score ?? 0,
+      opponent.score,
+      miniStake,
+    );
+    if (
+      preview.stakePerPlayer <= 0 ||
+      !window.confirm(
+        `Queue a ${miniStake === "half" ? "Half" : "All"} Mini-Game against ${opponent.displayName}? If it starts, ${preview.stakePerPlayer.toLocaleString()} points from each player will be locked into a ${preview.pot.toLocaleString()} point pot. The challenge cannot be rejected and the stake is recalculated from live scores at start.`,
+      )
+    )
+      return;
+    setPending("mini-request");
+    setNotice("");
+    try {
+      applySnapshot(
+        await requestMiniGameChallenge(
+          auth.client,
+          snapshot.room.id,
+          opponent.id,
+          miniStake,
+          crypto.randomUUID(),
+        ),
+      );
+      setNotice(
+        "Mini-Game Challenge queued. Your token is used only if it starts.",
+      );
+    } catch (cause) {
+      setError(messageFor(cause));
+      void refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function submitMiniGame(result: Record<string, unknown>) {
+    const challenge = snapshot?.miniGameState.challenge;
+    if (auth.status !== "ready" || !snapshot || !challenge) return;
+    setPending("mini-submit");
+    setNotice("");
+    try {
+      applySnapshot(
+        await submitMiniGameResult(
+          auth.client,
+          snapshot.room.id,
+          challenge.id,
+          result,
+          crypto.randomUUID(),
+        ),
+      );
+      setNotice("Result received by the server.");
+    } catch (cause) {
+      setError(messageFor(cause));
+      void refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
   if (auth.status === "unconfigured" || auth.status === "error") {
     return (
       <GameState
@@ -413,7 +536,7 @@ export function GameClient({ roomId }: { roomId: string | null }) {
           </h1>
           <p>
             {snapshot.room.tiebreakerRequired
-              ? "A future Mini-Game tiebreaker is required. Milestone 3 does not declare a false winner."
+              ? "A championship tiebreaker is required and remains reserved for Milestone 6."
               : "The final core-game round is complete."}
           </p>
           <Leaderboard snapshot={snapshot} />
@@ -443,9 +566,11 @@ export function GameClient({ roomId }: { roomId: string | null }) {
             ? "ROUND SUMMARY"
             : snapshot.room.phase === "action_choice"
               ? `ACTION CHOICE · ${snapshot.actionState.respondedCount}/${snapshot.actionState.participantCount} READY`
-              : isMyTurn
-                ? "YOUR TURN"
-                : `${activePlayer?.displayName ?? "Player"} IS CHOOSING`}
+              : snapshot.room.phase === "mini_game_resolution"
+                ? "MINI-GAME RESOLUTION"
+                : isMyTurn
+                  ? "YOUR TURN"
+                  : `${activePlayer?.displayName ?? "Player"} IS CHOOSING`}
         </div>
         <div className={remaining <= 5 ? "game-timer is-urgent" : "game-timer"}>
           <Clock3 size={17} /> {remaining}s
@@ -462,6 +587,13 @@ export function GameClient({ roomId }: { roomId: string | null }) {
           onTargetChange={setTargetId}
           onChoice={chooseAction}
           onTarget={chooseActionTarget}
+        />
+      ) : snapshot.room.phase === "mini_game_resolution" ? (
+        <MiniGameResolutionPanel
+          snapshot={snapshot}
+          pending={pending}
+          remaining={remaining}
+          onSubmit={submitMiniGame}
         />
       ) : (
         <section className="game-grid">
@@ -576,6 +708,15 @@ export function GameClient({ roomId }: { roomId: string | null }) {
               <strong>{self.score.toLocaleString()}</strong>
               <small>RANK #{self.rank}</small>
             </div>
+            <MiniGameTokenPanel
+              snapshot={snapshot}
+              opponentId={miniOpponentId}
+              stake={miniStake}
+              pending={pending}
+              onOpponentChange={setMiniOpponentId}
+              onStakeChange={setMiniStake}
+              onRequest={chooseMiniGameChallenge}
+            />
             <Leaderboard snapshot={snapshot} />
             <div className="event-card">
               <h2>Live match feed</h2>
@@ -601,6 +742,493 @@ export function GameClient({ roomId }: { roomId: string | null }) {
         </div>
       )}
     </main>
+  );
+}
+
+function MiniGameTokenPanel({
+  snapshot,
+  opponentId,
+  stake,
+  pending,
+  onOpponentChange,
+  onStakeChange,
+  onRequest,
+}: {
+  snapshot: MatchSnapshot;
+  opponentId: string;
+  stake: MiniGameStakeType;
+  pending: string | null;
+  onOpponentChange: (value: string) => void;
+  onStakeChange: (value: MiniGameStakeType) => void;
+  onRequest: () => Promise<void>;
+}) {
+  const self = snapshot.players.find((player) => player.isSelf)!;
+  const opponents = snapshot.players.filter((player) =>
+    snapshot.miniGameState.eligibleOpponentIds.includes(player.id),
+  );
+  const opponent = opponents.find((player) => player.id === opponentId);
+  const preview = opponent
+    ? previewMatchedStake(self.score, opponent.score, stake)
+    : null;
+  const ownChallenge = snapshot.miniGameState.challenge;
+
+  return (
+    <div className="mini-token-card">
+      <div className="mini-token-heading">
+        <Gamepad2 aria-hidden="true" />
+        <div>
+          <span>Mini-Game token</span>
+          <strong>
+            {snapshot.miniGameState.tokenAvailable ? "Available" : "Used"}
+          </strong>
+        </div>
+      </div>
+      {ownChallenge?.status === "queued" ? (
+        <p>
+          Your challenge is #{ownChallenge.queuePosition} in the FIFO queue.
+          Your token remains available until it starts.
+        </p>
+      ) : snapshot.miniGameState.tokenAvailable && opponents.length ? (
+        <>
+          <label htmlFor="mini-opponent">Challenge opponent</label>
+          <select
+            id="mini-opponent"
+            value={opponentId}
+            onChange={(event) => onOpponentChange(event.target.value)}
+            disabled={pending !== null}
+          >
+            <option value="">Choose opponent</option>
+            {opponents.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.displayName} · {player.score.toLocaleString()} pts
+              </option>
+            ))}
+          </select>
+          <fieldset className="mini-stake-options">
+            <legend>Matched stake</legend>
+            {(["half", "all"] as const).map((value) => (
+              <label key={value}>
+                <input
+                  type="radio"
+                  name="mini-stake"
+                  value={value}
+                  checked={stake === value}
+                  onChange={() => onStakeChange(value)}
+                  disabled={pending !== null}
+                />
+                {value === "half" ? "Half" : "All"}
+              </label>
+            ))}
+          </fieldset>
+          <div className="mini-stake-preview" aria-live="polite">
+            <span>Each player</span>
+            <strong>{preview?.stakePerPlayer.toLocaleString() ?? "—"}</strong>
+            <span>Potential pot</span>
+            <strong>{preview?.pot.toLocaleString() ?? "—"}</strong>
+          </div>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={
+              !opponentId || !preview?.stakePerPlayer || pending !== null
+            }
+            onClick={() => void onRequest()}
+          >
+            <Zap size={17} aria-hidden="true" />
+            {pending === "mini-request" ? "Queueing…" : "Queue challenge"}
+          </button>
+          <small>
+            One token per match. Stakes lock after point scoring and cannot be
+            rejected.
+          </small>
+        </>
+      ) : (
+        <p>
+          {snapshot.miniGameState.tokenAvailable
+            ? "No eligible opponent is currently available."
+            : "Your one challenge token has been consumed."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MiniGameResolutionPanel({
+  snapshot,
+  pending,
+  remaining,
+  onSubmit,
+}: {
+  snapshot: MatchSnapshot;
+  pending: string | null;
+  remaining: number;
+  onSubmit: (result: Record<string, unknown>) => Promise<void>;
+}) {
+  const challenge = snapshot.miniGameState.challenge;
+  const self = snapshot.players.find((player) => player.isSelf)!;
+  const opponent = challenge
+    ? snapshot.players.find(
+        (player) =>
+          player.id ===
+          (challenge.challengerPlayerId === self.id
+            ? challenge.opponentPlayerId
+            : challenge.challengerPlayerId),
+      )
+    : null;
+  const [untilStart, setUntilStart] = useState(
+    secondsUntil(challenge?.startsAt ?? null),
+  );
+
+  useEffect(() => {
+    const tick = () => setUntilStart(secondsUntil(challenge?.startsAt ?? null));
+    tick();
+    const interval = window.setInterval(tick, 100);
+    return () => window.clearInterval(interval);
+  }, [challenge?.startsAt]);
+
+  if (!challenge) {
+    return (
+      <section className="mini-resolution-shell">
+        <div className="mini-wait-card" role="status">
+          <RefreshCcw className="state-spinner" aria-hidden="true" />
+          <p className="eyebrow">MINI-GAMES IN PROGRESS</p>
+          <h1>Another matchup is resolving.</h1>
+          <p>
+            Challenge details and results are private to its two participants.
+            This screen will advance automatically.
+          </p>
+        </div>
+        <Leaderboard snapshot={snapshot} />
+      </section>
+    );
+  }
+
+  const statusLabel =
+    challenge.status === "tiebreaker_active"
+      ? "SEEDED STOP THE BAR TIEBREAKER"
+      : challenge.gameType?.replaceAll("_", " ").toUpperCase();
+  const terminal = ["resolved", "refunded", "cancelled"].includes(
+    challenge.status,
+  );
+  const winner = snapshot.players.find(
+    (player) => player.id === challenge.winnerPlayerId,
+  );
+
+  return (
+    <section className="mini-resolution-shell">
+      <div className="mini-game-card">
+        <header className="mini-game-header">
+          <div>
+            <p className="eyebrow">{statusLabel ?? "MINI-GAME"}</p>
+            <h1>You vs {opponent?.displayName ?? "opponent"}</h1>
+          </div>
+          <div className="mini-pot">
+            <span>Locked pot</span>
+            <strong>{challenge.pot?.toLocaleString() ?? "—"}</strong>
+          </div>
+        </header>
+
+        {terminal ? (
+          <div className="mini-wait-card" role="status">
+            {challenge.status === "resolved" ? (
+              <Trophy aria-hidden="true" />
+            ) : (
+              <ShieldCheck aria-hidden="true" />
+            )}
+            <p className="eyebrow">CHALLENGE SETTLED</p>
+            <h2>
+              {challenge.status === "resolved"
+                ? winner?.isSelf
+                  ? "You won the pot."
+                  : `${winner?.displayName ?? "Your opponent"} won the pot.`
+                : challenge.status === "refunded"
+                  ? "Both stakes were refunded."
+                  : "The challenge was cancelled."}
+            </h2>
+            <p>
+              {snapshot.miniGameState.roomHasActiveChallenge ||
+              snapshot.miniGameState.roomQueueCount > 0
+                ? "The remaining room queue is resolving now."
+                : "Round summary is starting."}
+            </p>
+          </div>
+        ) : challenge.ownSubmitted ? (
+          <div className="mini-wait-card" role="status">
+            <Check aria-hidden="true" />
+            <p className="eyebrow">RESULT LOCKED</p>
+            <h2>Waiting for {opponent?.displayName ?? "your opponent"}.</h2>
+            <p>Your submitted result cannot be changed.</p>
+          </div>
+        ) : untilStart > 0 ? (
+          <div className="mini-start-countdown" role="timer">
+            <span>Get ready</span>
+            <strong>{untilStart}</strong>
+            <small>Both players receive the same synchronized start.</small>
+          </div>
+        ) : challenge.specification ? (
+          <MiniGamePlay
+            key={`${challenge.id}:${challenge.attempt}`}
+            specification={challenge.specification}
+            disabled={pending !== null || remaining <= 0}
+            onSubmit={onSubmit}
+          />
+        ) : (
+          <div className="mini-wait-card" role="status">
+            <RefreshCcw className="state-spinner" aria-hidden="true" />
+            <h2>Restoring the secure game specification…</h2>
+          </div>
+        )}
+        <footer className="mini-game-footer">
+          <span>
+            {terminal
+              ? `Settled via ${challenge.resolutionMethod?.replaceAll("_", " ") ?? challenge.status}`
+              : `Attempt ${challenge.attempt} · ${remaining}s remaining`}
+          </span>
+          <span>
+            {challenge.stakeType === "half" ? "Half" : "All"} stake ·{" "}
+            {challenge.stakePerPlayer?.toLocaleString() ?? "—"} each
+          </span>
+        </footer>
+      </div>
+      <aside className="game-sidebar">
+        <Leaderboard snapshot={snapshot} />
+        <div className="mini-rules-card">
+          <ShieldCheck aria-hidden="true" />
+          <strong>Server-validated</strong>
+          <p>
+            The hidden seed, deadlines, escrow, and winner are controlled by the
+            authoritative database.
+          </p>
+        </div>
+      </aside>
+    </section>
+  );
+}
+
+function MiniGamePlay({
+  specification,
+  disabled,
+  onSubmit,
+}: {
+  specification: MiniGameSpecification;
+  disabled: boolean;
+  onSubmit: (result: Record<string, unknown>) => Promise<void>;
+}) {
+  if (specification.type === "stop_bar")
+    return (
+      <StopBarGame
+        specification={specification}
+        disabled={disabled}
+        onSubmit={onSubmit}
+      />
+    );
+  if (specification.type === "memory_sequence")
+    return (
+      <MemorySequenceGame
+        specification={specification}
+        disabled={disabled}
+        onSubmit={onSubmit}
+      />
+    );
+  return (
+    <DifferentSymbolGame
+      specification={specification}
+      disabled={disabled}
+      onSubmit={onSubmit}
+    />
+  );
+}
+
+function StopBarGame({
+  specification,
+  disabled,
+  onSubmit,
+}: {
+  specification: Extract<MiniGameSpecification, { type: "stop_bar" }>;
+  disabled: boolean;
+  onSubmit: (result: Record<string, unknown>) => Promise<void>;
+}) {
+  const startedAt = useRef(0);
+  const [position, setPosition] = useState(0);
+
+  useEffect(() => {
+    startedAt.current = interactionNow();
+    let frame = 0;
+    const animate = (now: number) => {
+      setPosition(stopBarPosition(specification, now - startedAt.current));
+      frame = window.requestAnimationFrame(animate);
+    };
+    frame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frame);
+  }, [specification]);
+
+  function stop() {
+    const elapsedMs = Math.round(interactionNow() - startedAt.current);
+    void onSubmit({
+      position: stopBarPosition(specification, elapsedMs),
+      elapsedMs,
+    });
+  }
+
+  return (
+    <div className="stop-bar-game">
+      <Brain aria-hidden="true" />
+      <h2>Stop closest to the target.</h2>
+      <div className="stop-track" aria-label="Moving marker and target zone">
+        <span
+          className="stop-target"
+          style={{ left: `${specification.targetPosition * 100}%` }}
+        />
+        <span className="stop-marker" style={{ left: `${position * 100}%` }} />
+      </div>
+      <button
+        className="button button-lime mini-primary-control"
+        type="button"
+        disabled={disabled}
+        onClick={stop}
+      >
+        STOP
+      </button>
+      <p>Press Enter or Space while the button is focused.</p>
+    </div>
+  );
+}
+
+const memoryLabels = {
+  star: "★",
+  circle: "●",
+  triangle: "▲",
+  diamond: "◆",
+} as const;
+
+function MemorySequenceGame({
+  specification,
+  disabled,
+  onSubmit,
+}: {
+  specification: Extract<MiniGameSpecification, { type: "memory_sequence" }>;
+  disabled: boolean;
+  onSubmit: (result: Record<string, unknown>) => Promise<void>;
+}) {
+  const startedAt = useRef(0);
+  const [showIndex, setShowIndex] = useState(0);
+  const [input, setInput] = useState<string[]>([]);
+  const showing = showIndex < specification.sequence.length;
+
+  useEffect(() => {
+    if (startedAt.current === 0) startedAt.current = interactionNow();
+    if (!showing) return;
+    const timeout = window.setTimeout(
+      () => setShowIndex((current) => current + 1),
+      specification.displayIntervalMs,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [showIndex, showing, specification.displayIntervalMs]);
+
+  function choose(symbol: string) {
+    const next = [...input, symbol];
+    setInput(next);
+    if (next.length === specification.sequence.length) {
+      void onSubmit({
+        sequence: next,
+        correctConsecutive: correctConsecutiveSymbols(specification, next),
+        elapsedMs: Math.round(interactionNow() - startedAt.current),
+      });
+    }
+  }
+
+  return (
+    <div className="memory-game">
+      <h2>Remember the sequence.</h2>
+      {showing ? (
+        <div className="memory-display" aria-live="polite">
+          <strong>
+            {memoryLabels[specification.sequence[showIndex]] ?? "•"}
+          </strong>
+          <span>
+            Symbol {showIndex + 1} of {specification.sequence.length}
+          </span>
+        </div>
+      ) : (
+        <>
+          <p>
+            Repeat it in order · {input.length}/{specification.sequence.length}
+          </p>
+          <div className="memory-controls">
+            {specification.symbols.map((symbol) => (
+              <button
+                key={symbol}
+                type="button"
+                aria-label={symbol}
+                disabled={disabled}
+                onClick={() => choose(symbol)}
+              >
+                {memoryLabels[symbol]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DifferentSymbolGame({
+  specification,
+  disabled,
+  onSubmit,
+}: {
+  specification: Extract<MiniGameSpecification, { type: "different_symbol" }>;
+  disabled: boolean;
+  onSubmit: (result: Record<string, unknown>) => Promise<void>;
+}) {
+  const startedAt = useRef(0);
+  const [incorrectTaps, setIncorrectTaps] = useState(0);
+  const circles = specification.cells.filter(
+    (cell) => cell === "circle",
+  ).length;
+  const common =
+    circles > specification.cells.length / 2 ? "circle" : "diamond";
+
+  useEffect(() => {
+    startedAt.current = interactionNow();
+  }, []);
+
+  function choose(index: number) {
+    if (specification.cells[index] === common) {
+      setIncorrectTaps((count) => count + 1);
+      return;
+    }
+    void onSubmit({
+      selectedCell: index,
+      incorrectTaps,
+      elapsedMs: Math.round(interactionNow() - startedAt.current),
+    });
+  }
+
+  return (
+    <div className="different-game">
+      <h2>Find the different symbol.</h2>
+      <p>{incorrectTaps} incorrect taps · each adds a time penalty</p>
+      <div
+        className="different-grid"
+        style={{
+          gridTemplateColumns: `repeat(${specification.gridSize}, 1fr)`,
+        }}
+      >
+        {specification.cells.map((cell, index) => (
+          <button
+            key={index}
+            type="button"
+            aria-label={`${cell} at row ${Math.floor(index / specification.gridSize) + 1}, column ${(index % specification.gridSize) + 1}`}
+            disabled={disabled}
+            onClick={() => choose(index)}
+          >
+            {cell === "circle" ? "●" : "◆"}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -72,7 +72,7 @@ stateDiagram-v2
 
 Every transition is a database transaction invoked by a validated Edge Function/RPC. Clients render server timestamps locally and refetch an authoritative snapshot after reconnecting; Realtime notifications are hints that state changed, never the state of record.
 
-The currently implemented runtime proceeds directly from `PointDecision` to `RoundSummary`; the Mini-Game branches shown above belong to the next milestone and are not active.
+The implemented runtime now uses the `MiniGameResolution` branch. An empty queue passes through safely; otherwise challenges resolve one at a time in FIFO order before `RoundSummary`. Championship tiebreakers and rematches remain Milestone 6 work.
 
 ## Milestone acceptance gates
 

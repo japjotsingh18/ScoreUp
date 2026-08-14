@@ -1,0 +1,46 @@
+begin;
+set local search_path = public, extensions;
+
+select plan(38);
+
+select has_table('public', 'mini_game_challenges', 'Mini-Game queue table exists');
+select has_table('public', 'mini_game_submissions', 'Mini-Game submission table exists');
+select has_table('private', 'mini_game_specs', 'protected Mini-Game specifications exist');
+select has_table('private', 'mini_game_participant_locks', 'participant concurrency locks exist');
+select has_column('public', 'mini_game_challenges', 'queue_position', 'FIFO position is persisted');
+select has_column('public', 'mini_game_challenges', 'stake_per_player', 'matched stake is persisted');
+select has_column('public', 'mini_game_challenges', 'pot', 'escrow pot is persisted');
+select has_column('public', 'mini_game_challenges', 'current_attempt', 'ordinary and tiebreaker attempts are tracked');
+select has_column('public', 'mini_game_challenges', 'submission_deadline', 'server submission deadline is persisted');
+select has_column('public', 'score_ledger', 'mini_game_challenge_id', 'score ledger references Mini-Games');
+select col_is_fk('public', 'mini_game_challenges', array['room_id', 'challenger_player_id'], 'challenger belongs to the room');
+select col_is_fk('public', 'mini_game_challenges', array['room_id', 'opponent_player_id'], 'opponent belongs to the room');
+select col_is_fk('public', 'mini_game_submissions', 'challenge_id', 'submissions bind to a challenge');
+select col_is_fk('public', 'score_ledger', 'mini_game_challenge_id', 'ledger Mini-Game source is auditable');
+select has_index('public', 'mini_game_challenges', 'mini_game_one_active_per_room', 'one challenge may be active per room');
+select has_index('public', 'mini_game_challenges', 'mini_game_challenges_idempotency_unique', 'challenge requests are idempotent');
+select has_index('public', 'mini_game_submissions', 'mini_game_submissions_one_per_attempt', 'one submission per participant attempt');
+select has_index('public', 'mini_game_submissions', 'mini_game_submissions_idempotency_unique', 'submission replay keys are unique');
+select has_index('public', 'score_ledger', 'score_ledger_mini_game_player_reason_key', 'escrow and settlement reasons apply once');
+select ok((select relrowsecurity from pg_class where oid = 'public.mini_game_challenges'::regclass), 'challenge rows have RLS');
+select ok((select relforcerowsecurity from pg_class where oid = 'public.mini_game_challenges'::regclass), 'challenge rows force RLS');
+select ok((select relrowsecurity from pg_class where oid = 'public.mini_game_submissions'::regclass), 'submission rows have RLS');
+select ok((select relforcerowsecurity from pg_class where oid = 'public.mini_game_submissions'::regclass), 'submission rows force RLS');
+select has_function('public', 'request_mini_game_challenge', array['uuid','uuid','mini_game_stake_type','uuid'], 'challenge request RPC exists');
+select has_function('public', 'process_mini_game_queue', array['uuid','uuid'], 'queue processor RPC exists');
+select has_function('public', 'submit_mini_game_result', array['uuid','uuid','jsonb','uuid'], 'result submission RPC exists');
+select has_function('public', 'process_expired_mini_game', array['uuid','uuid'], 'expired challenge RPC exists');
+select has_function('public', 'get_mini_game_snapshot', array['uuid'], 'participant snapshot RPC exists');
+select has_function('private', 'refund_mini_game_escrow', array['uuid','text'], 'server-only refund operation exists');
+select ok(not has_function_privilege('authenticated', 'private.select_mini_game_type()', 'execute'), 'clients cannot choose the Mini-Game');
+select ok(not has_function_privilege('authenticated', 'private.generate_mini_game_spec(public.mini_game_type,bytea)', 'execute'), 'clients cannot invoke protected specification derivation');
+select ok(not has_table_privilege('authenticated', 'private.mini_game_specs', 'select'), 'clients cannot read raw seeds');
+select ok(not has_table_privilege('authenticated', 'private.mini_game_specs', 'update'), 'clients cannot alter specifications');
+select ok(not has_table_privilege('authenticated', 'public.score_ledger', 'insert'), 'clients cannot award or escrow points directly');
+select ok(not has_table_privilege('authenticated', 'public.players', 'update'), 'clients cannot consume or restore tokens directly');
+select is((select count(*) from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='mini_game_type'), 3::bigint, 'exactly three Mini-Games are configured');
+select is((select count(*) from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='mini_game_stake_type'), 2::bigint, 'Half and All stakes are configured');
+select is((select count(*) from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='mini_game_resolution_method'), 6::bigint, 'resolution methods include result, timeout, invalid, fallback, and refund paths');
+
+select * from finish();
+rollback;

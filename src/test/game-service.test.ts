@@ -7,6 +7,10 @@ import {
   processTimeout,
   processActionPhaseTimeout,
   processActionTargetTimeout,
+  processMiniGameQueue,
+  processMiniGameTimeout,
+  requestMiniGameChallenge,
+  submitMiniGameResult,
   submitActionChoice,
   submitActionTarget,
 } from "../lib/supabase/game";
@@ -124,5 +128,56 @@ describe("core game service", () => {
       "process_expired_action_phase",
       "process_expired_action_target",
     ]);
+  });
+
+  it("sends only opponent, stake type, and replay key when queueing a Mini-Game", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: matchFixture, error: null });
+    await requestMiniGameChallenge(
+      clientWithRpc(rpc),
+      matchFixture.room.id,
+      matchFixture.players[1].id,
+      "half",
+      "f6459f71-c29f-43d2-887c-a13f4d56a171",
+    );
+    expect(rpc).toHaveBeenCalledWith("request_mini_game_challenge", {
+      p_room_id: matchFixture.room.id,
+      p_opponent_player_id: matchFixture.players[1].id,
+      p_stake_type: "half",
+      p_idempotency_key: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+    });
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("seed");
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("score");
+  });
+
+  it("submits a compact result and uses server-side queue and timeout selection", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: matchFixture, error: null });
+    const client = clientWithRpc(rpc);
+    await submitMiniGameResult(
+      client,
+      matchFixture.room.id,
+      "8db937ae-04cc-4d45-9b4d-746674cebc20",
+      { position: 0.4, elapsedMs: 900 },
+      "7f0028d2-6ec5-4e4e-b81a-6eea056e34fd",
+    );
+    await processMiniGameQueue(
+      client,
+      matchFixture.room.id,
+      "fa403be2-77e5-43d7-9169-f4fae5aa9fc9",
+    );
+    await processMiniGameTimeout(
+      client,
+      matchFixture.room.id,
+      "704c61e7-206d-44ab-a2f6-4e6a99b1d531",
+    );
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "submit_mini_game_result",
+      "process_mini_game_queue",
+      "process_expired_mini_game",
+    ]);
+    expect(rpc.mock.calls[0]?.[1]).toMatchObject({
+      p_challenge_id: "8db937ae-04cc-4d45-9b4d-746674cebc20",
+      p_result_payload: { position: 0.4, elapsedMs: 900 },
+    });
+    expect(rpc.mock.calls[2]?.[1]).not.toHaveProperty("p_challenge_id");
   });
 });

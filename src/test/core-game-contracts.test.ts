@@ -4,6 +4,8 @@ import {
   actionTargetInputSchema,
   challengeInputSchema,
   matchSnapshotSchema,
+  miniGameChallengeInputSchema,
+  miniGameSubmissionInputSchema,
 } from "../game/core/contracts";
 import { matchFixture } from "./fixtures/match";
 
@@ -120,5 +122,69 @@ describe("core game contracts", () => {
         idempotencyKey: "8db937ae-04cc-4d45-9b4d-746674cebc20",
       }).targetPlayerId,
     ).toBe(matchFixture.players[1].id);
+  });
+
+  it("strictly parses participant-safe Mini-Game state", () => {
+    const parsed = matchSnapshotSchema.parse({
+      ...matchFixture,
+      room: { ...matchFixture.room, phase: "mini_game_resolution" },
+      round: { ...matchFixture.round, phase: "mini_game_resolution" },
+      miniGameState: {
+        ...matchFixture.miniGameState,
+        roomHasActiveChallenge: true,
+        challenge: {
+          id: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+          status: "active",
+          queuePosition: 0,
+          challengerPlayerId: matchFixture.players[0].id,
+          opponentPlayerId: matchFixture.players[1].id,
+          isChallenger: true,
+          stakeType: "half",
+          stakePerPlayer: 500,
+          pot: 1_000,
+          gameType: "stop_bar",
+          attempt: 1,
+          startsAt: "2026-08-13T00:00:03Z",
+          submissionDeadline: "2026-08-13T00:00:18Z",
+          specification: {
+            type: "stop_bar",
+            targetPosition: 0.4,
+            markerSpeed: 0.7,
+            initialDirection: 1,
+            maximumDurationMs: 15_000,
+          },
+          ownSubmitted: false,
+          opponentSubmitted: false,
+          winnerPlayerId: null,
+          resolutionMethod: null,
+          completedAt: null,
+          cancellationReason: null,
+        },
+      },
+    });
+    expect(parsed.miniGameState.challenge?.specification).toMatchObject({
+      type: "stop_bar",
+      targetPosition: 0.4,
+    });
+    expect(parsed.miniGameState.challenge).not.toHaveProperty("seed");
+  });
+
+  it("validates Mini-Game commands and rejects oversized result payloads", () => {
+    expect(
+      miniGameChallengeInputSchema.parse({
+        roomId: matchFixture.room.id,
+        opponentPlayerId: matchFixture.players[1].id,
+        stakeType: "all",
+        idempotencyKey: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+      }).stakeType,
+    ).toBe("all");
+    expect(
+      miniGameSubmissionInputSchema.safeParse({
+        roomId: matchFixture.room.id,
+        challengeId: "8db937ae-04cc-4d45-9b4d-746674cebc20",
+        result: { sequence: Array.from({ length: 100 }, () => "star") },
+        idempotencyKey: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+      }).success,
+    ).toBe(false);
   });
 });

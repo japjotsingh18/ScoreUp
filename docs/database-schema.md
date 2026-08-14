@@ -1,6 +1,6 @@
 # Database design
 
-Postgres is the source of truth. Milestone 4 extends the verified lobby and Core Game with normalized Action Card state. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
+Postgres is the source of truth. Milestone 5 extends the verified lobby, Core Game, and Action Card state with normalized Mini-Game Challenges. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
 
 ## Implemented in Milestone 2
 
@@ -86,21 +86,29 @@ Each actor has at most one decision per round; every command has a room-scoped i
 
 `score_ledger` now accepts exactly one source kind: a Core Game decision or Action draw. Action entries carry signed deltas, non-negative post-change balances, reason codes, and a unique draw/player/reason index. Zero-value effects do not manufacture ledger rows.
 
-## Planned after Milestone 3
+## Implemented in Milestone 5
 
-### `mini_game_challenges` and private specifications
+### `mini_game_challenges`, locks, and private specifications
 
-The public challenge row stores participants, stake type, locked stake per player, game type, status, winner, deadlines, and tiebreaker flags. `mini_game_specs_private` stores the secure seed and derived answer data with server-only access. A unique partial index prevents either participant appearing in more than one active challenge.
+The challenge row stores room/round, immutable FIFO position, participants, Half/All stake type, locked stake per player, pot, server-selected game, status, attempt, winner, resolution method, and authoritative start/deadline timestamps. RLS exposes a row only to its two participants. `private.mini_game_participant_locks` prevents either participant from entering multiple queued or active challenges in one round; a partial unique index permits only one active/tiebreaker challenge per room.
+
+`private.mini_game_specs` stores one 32-byte secure seed, participant-safe derived specification, and server-only expected result per challenge attempt. The browser cannot select or read the seed, expected answer, secure game selector, or database-owner-only deterministic test controls.
 
 ### `mini_game_submissions`
 
-- unique `(challenge_id, player_id)`
+- unique `(challenge_id, attempt, player_id)`
 - compact `result_payload`
 - client timing metadata plus authoritative `received_at`
 - validation status/reason
 - unique replay/idempotency key
 
-### `rate_limits` and cleanup
+RLS exposes only the caller's own submission. Validation records accepted/rejected status and reason, normalized comparison values, and receipt time. Direct browser writes remain denied.
+
+### Mini-Game ledger extension
+
+`score_ledger` accepts exactly one Core decision, Action draw, or Mini-Game challenge source. Starting a challenge atomically deducts equal live-score stakes with two escrow entries. Settlement writes one pot award; exceptional server cancellation writes two refunds. Unique challenge/player/reason keys make repeated settlement harmless and balances cannot become negative.
+
+### Planned rate limits and cleanup
 
 A short-lived server-only bucket table keys attempts by operation, auth user, and room. Scheduled cleanup removes expired rate buckets and abandoned unstarted rooms; completed match history follows a documented retention window. Auth-user deletion cascades only after room-history requirements are considered.
 
@@ -124,3 +132,13 @@ Every state-changing Core Game command accepts an idempotency key or uses the ro
 - `get_action_state_snapshot`: returns the public match plus only the caller's choice, draw identity/result, eligible targets, and shield state
 
 Point-decision order is generated only after every participant has responded and every targeted draw has resolved.
+
+## Mini-Game transaction boundaries
+
+- `request_mini_game_challenge`: derives the challenger, enforces point-decision phase/token/score/room rules, acquires both participant locks, and appends to the FIFO queue without consuming the token.
+- `process_mini_game_queue`: participant-triggered but server-selected; starts only the valid FIFO head, recalculates the stake from locked live scores, selects the game/seed securely, deducts escrow, and consumes only the challenger's token.
+- `submit_mini_game_result`: accepts one compact participant result per attempt, enforces the synchronized server window, validates seed-derived answers/ranges/timing, and compares normalized server values.
+- `process_expired_mini_game`: finds the room's active challenge server-side, uses database time and row locks, resolves one-sided/both timeouts, and advances the queue idempotently.
+- `get_mini_game_snapshot`: returns public-safe room status plus full challenge/specification details only to either participant and never returns raw seeds or expected answers.
+
+When an ordinary game ties, the same escrow enters one seeded Stop the Bar attempt without another deduction. A repeated tie uses secure random selection. Round summary begins only after no queued or active challenge remains.

@@ -2188,10 +2188,282 @@ fieldset {
 }
 .self-score-card,
 .leaderboard-card,
-.event-card {
+.event-card,
+.mini-token-card,
+.mini-rules-card {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(16, 18, 38, 0.92);
+}
+.mini-token-card {
+  padding: 18px;
+  display: grid;
+  gap: 11px;
+}
+.mini-token-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.mini-token-heading > svg {
+  color: var(--lime);
+}
+.mini-token-heading div {
+  display: grid;
+}
+.mini-token-heading span,
+.mini-token-card > label,
+.mini-token-card > small,
+.mini-token-card > p {
+  color: var(--muted);
+  font-size: 11px;
+}
+.mini-token-heading strong {
+  color: var(--lime);
+}
+.mini-token-card select {
+  min-height: 43px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: white;
+}
+.mini-stake-options {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 13px;
+  border: 0;
+}
+.mini-stake-options legend {
+  width: 100%;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.mini-stake-options label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.mini-stake-preview {
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  border-radius: 9px;
+  background: rgba(216, 255, 67, 0.06);
+}
+.mini-stake-preview span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.mini-stake-preview strong {
+  color: var(--lime);
+}
+.mini-resolution-shell {
+  width: min(1240px, calc(100% - 40px));
+  margin: 22px auto 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 22px;
+}
+.mini-game-card,
+.mini-wait-card,
+.mini-rules-card {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(16, 18, 38, 0.94);
+}
+.mini-game-card {
+  min-height: 550px;
+  padding: clamp(20px, 4vw, 38px);
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at 50% 0, rgba(216, 255, 67, 0.09), transparent 38%),
+    rgba(16, 18, 38, 0.95);
+}
+.mini-game-header,
+.mini-game-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.mini-game-header h1 {
+  margin: 3px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5vw, 56px);
+}
+.mini-pot {
+  display: grid;
+  text-align: right;
+}
+.mini-pot span,
+.mini-game-footer,
+.stop-bar-game p,
+.different-game p,
+.memory-game p {
+  color: var(--muted);
+  font-size: 12px;
+}
+.mini-pot strong {
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: 34px;
+}
+.mini-game-footer {
+  margin-top: auto;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.mini-wait-card {
+  min-height: 340px;
+  padding: 32px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.mini-wait-card > svg {
+  margin: 0 auto 15px;
+  color: var(--lime);
+}
+.mini-wait-card h1,
+.mini-wait-card h2 {
+  margin: 4px 0;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 5vw, 50px);
+}
+.mini-wait-card p:last-child {
+  color: var(--muted);
+}
+.mini-start-countdown {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.mini-start-countdown strong {
+  font-family: var(--font-display);
+  font-size: 120px;
+  line-height: 0.9;
+  color: var(--lime);
+}
+.mini-start-countdown small {
+  margin-top: 12px;
+  color: var(--muted);
+}
+.stop-bar-game,
+.memory-game,
+.different-game {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.stop-bar-game > svg {
+  margin: 0 auto;
+  color: var(--purple-bright);
+}
+.stop-bar-game h2,
+.memory-game h2,
+.different-game h2 {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 5vw, 48px);
+}
+.stop-track {
+  width: min(570px, 72vw);
+  height: 54px;
+  margin: 24px auto 30px;
+  position: relative;
+  border-radius: 999px;
+  background: #292c50;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+.stop-target,
+.stop-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.stop-target {
+  width: 28px;
+  height: 100%;
+  background: rgba(216, 255, 67, 0.34);
+  border: 2px solid var(--lime);
+}
+.stop-marker {
+  width: 7px;
+  height: 72px;
+  border-radius: 5px;
+  background: white;
+  box-shadow: 0 0 15px white;
+}
+.mini-primary-control {
+  width: min(320px, 100%);
+  min-height: 72px;
+  margin: 0 auto;
+  font-family: var(--font-display);
+  font-size: 28px;
+}
+.memory-display {
+  min-height: 190px;
+  display: grid;
+  place-content: center;
+}
+.memory-display strong {
+  font-size: 90px;
+  color: var(--lime);
+}
+.memory-controls {
+  display: grid;
+  grid-template-columns: repeat(4, 80px);
+  gap: 10px;
+}
+.memory-controls button,
+.different-grid button {
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel-2);
+  color: white;
+  font-size: 34px;
+  cursor: pointer;
+}
+.memory-controls button:hover,
+.memory-controls button:focus-visible,
+.different-grid button:hover,
+.different-grid button:focus-visible {
+  border-color: var(--lime);
+  background: rgba(216, 255, 67, 0.1);
+}
+.different-grid {
+  width: min(440px, 76vw);
+  margin: 12px auto;
+  display: grid;
+  gap: 8px;
+}
+.different-grid button {
+  font-size: clamp(20px, 5vw, 34px);
+}
+.mini-rules-card {
+  padding: 20px;
+}
+.mini-rules-card > svg {
+  color: var(--blue);
+}
+.mini-rules-card strong {
+  display: block;
+  margin-top: 8px;
+}
+.mini-rules-card p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 .self-score-card {
   padding: 20px;
@@ -2382,7 +2654,8 @@ fieldset {
 }
 
 @media (max-width: 940px) {
-  .game-grid {
+  .game-grid,
+  .mini-resolution-shell {
     grid-template-columns: 1fr;
   }
   .game-sidebar {
@@ -2396,7 +2669,8 @@ fieldset {
 @media (max-width: 620px) {
   .game-topbar,
   .game-status-strip,
-  .game-grid {
+  .game-grid,
+  .mini-resolution-shell {
     width: calc(100% - 24px);
   }
   .game-topbar {
@@ -2459,5 +2733,20 @@ fieldset {
   }
   .summary-card-grid article {
     min-height: 155px;
+  }
+  .mini-game-card {
+    min-height: 500px;
+    padding: 18px;
+  }
+  .mini-game-header,
+  .mini-game-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mini-pot {
+    text-align: left;
+  }
+  .memory-controls {
+    grid-template-columns: repeat(2, 74px);
   }
 }

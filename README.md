@@ -4,13 +4,13 @@
 
 ScoreUp is a mobile-first, real-time multiplayer party game for 2–10 players. Hidden point cards create tension, action cards disrupt the leaderboard, and each player holds one skill-based Mini-Game Challenge that can turn a match at exactly the right moment.
 
-> Project status: **Milestone 4 Action Cards is implemented.** ScoreUp now includes the complete server-authoritative 18-card Mystery Action system. Mini-Game Challenges remain reserved for Milestone 5.
+> Project status: **Milestone 5 Mini-Game Challenges is implemented.** ScoreUp now includes the server-authoritative challenge queue, escrow settlement, three seeded games, timeout/tie handling, and participant-safe recovery. Championship tiebreakers remain reserved for Milestone 6.
 
 ## Screenshots
 
 Screenshots and hosted preview links will be added during the final deployment milestone.
 
-## Milestone 4 features
+## Implemented features through Milestone 5
 
 - Restored-or-created anonymous Supabase browser sessions with explicit unconfigured, loading, failure, and retry states
 - Atomic, idempotent room creation and serialized room joining through authenticated Postgres RPCs
@@ -29,6 +29,11 @@ Screenshots and hosted preview links will be added during the final deployment m
 - Weighted private 18-card catalog with immediate transactional score/card effects, shields, and mutation audit history
 - Signed action score-ledger entries, owner-only card results, public-safe events, and idempotent Draw/Skip/target RPCs
 - Accessible responsive card reveal, target selection, pending-player progress, shield status, reconnect recovery, and reduced-motion support
+- One Mini-Game Challenge token per player and match, with requests queued during point decisions and tokens consumed only at successful start
+- FIFO room queue, per-participant conflict locks, one active challenge per room, live-score revalidation, and automatic queue advancement before round summary
+- Transactional Half/All matched-stake escrow, signed deduction/award/refund ledger entries, non-negative balances, and idempotent settlement
+- Secure server-selected Stop the Bar, Memory Sequence, and Find the Different Symbol specifications with synchronized starts and compact validated submissions
+- Ordinary-tie Stop the Bar, repeated-tie secure random fallback, database-time timeouts, private participant snapshots, and reconnect-safe UI
 
 ## Game rules
 
@@ -42,7 +47,7 @@ ScoreUp uses points only. It contains no real-money mechanics, purchases, curren
 - Vite 8 with a Cloudflare-compatible Vinext route layer
 - Tailwind CSS 4 and a token-driven responsive design system
 - Supabase Postgres, Realtime, anonymous authentication, and narrowly scoped RPCs
-- Vitest, React Testing Library, and Playwright (Playwright multiplayer journeys begin with live rooms)
+- Vitest, React Testing Library, and pgTAP database integration tests
 - Cloudflare deployment output
 
 ## Architecture
@@ -57,7 +62,7 @@ flowchart LR
     E[Cloudflare] -->|serves application| A
 ```
 
-The browser is a command requester and renderer, never a game authority. Postgres RPCs own room and game transactions, including action-card selection and resolution. The browser never submits a card code, probability, score, point-card value, effect parameter, random outcome, or actor identity. Realtime messages are invalidation hints; reconnecting clients always fetch an authoritative actor-specific snapshot.
+The browser is a command requester and renderer, never a game authority. Postgres RPCs own room and game transactions, including action-card selection, Mini-Game queueing, escrow, validation, and resolution. The browser never submits an authoritative score, stake, pot, seed, target, winner, adjusted result, random outcome, or actor identity. Realtime messages are invalidation hints; reconnecting clients always fetch an authoritative actor-specific snapshot.
 
 The full [engineering blueprint](docs/product-engineering-plan.md), [database design](docs/database-schema.md), and [security model](docs/security-model.md) document the planned implementation.
 
@@ -71,7 +76,9 @@ flowchart LR
     A -->|targeted card| T[Await target up to 10s]
     T --> R
     R --> P[Point decisions]
-    P --> S[Round summary]
+    P --> M[Mini-game resolution]
+    M -->|FIFO queue remains| M
+    M --> S[Round summary]
     S -->|rounds remain| D
     S -->|final round| F[Finalize + tiebreak]
     F --> C[Completed]
@@ -81,7 +88,7 @@ Every implemented transition is a versioned, idempotent server command with phas
 
 ## Database design
 
-Milestone 4 adds normalized action choices/draws, a private weighted catalog, temporary shields, point-card mutation receipts, action references in the signed score ledger, and actor-private action snapshots. See [docs/database-schema.md](docs/database-schema.md), [Core Game decisions](docs/milestone-3.md), and [Action Card decisions](docs/milestone-4.md).
+Milestone 5 adds normalized challenges/submissions, private secure specifications, participant locks, score escrow references, and participant-specific Mini-Game snapshots. See [docs/database-schema.md](docs/database-schema.md), [Action Card decisions](docs/milestone-4.md), and [Mini-Game decisions](docs/milestone-5.md).
 
 ## Security approach
 
@@ -128,7 +135,7 @@ npm run format:check
 npm run build
 ```
 
-The TypeScript suite covers configuration, session restoration, strict lobby/game/action contracts, redacted commands, RPC error mapping, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, all 18 action effects, weighted catalog totals, targeted resolution, shield consumption, rounding, allowances, automatic skips, replay safety, privacy, Core Game rules, and reconnection.
+The TypeScript suite covers configuration, session restoration, strict lobby/game/Mini-Game contracts, compact commands, deterministic game helpers, accessible challenge UI, RPC error mapping, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, the complete earlier game, queue conflicts/FIFO order, stake escrow, all three Mini-Games, validation, ties, timeouts, privacy, and replay safety. Browser E2E was not added in Milestone 5 because no browser-test dependency was already configured.
 
 ## Deployment
 

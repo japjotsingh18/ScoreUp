@@ -16,6 +16,7 @@ Narrowly scoped Postgres RPCs form the Milestone 2 command boundary. The databas
 - Match participants can read public rounds/events/decisions. An unresolved private card is visible only to its authenticated owner; completed rounds reveal cards to participants. The score ledger has no browser grant.
 - Direct browser inserts, updates, and deletes on rounds, cards, decisions, scores, deadlines, phases, and events are denied.
 - Action choices and draws force RLS and are owner-selectable only. The catalog, shields, mutation audit, score ledger, random selectors, and deterministic test controls have no browser grants.
+- Mini-Game challenge rows are visible only to their two participants; submission rows are owner-only through a narrow security-definer identity predicate. Participant locks, raw seeds, expected answers, escrow ledger rows, selectors, and deterministic overrides have no browser table access.
 
 ## Command protections
 
@@ -39,6 +40,12 @@ Public challenge events reveal only the two cards after both are resolved. Gener
 
 Before summary, an owner sees their own card name and private result. Other clients see only allowlisted public event data. Fresh Draw and Random Card Swap events disclose no old/new point values. Only Point Swipe is classified as a shield-blockable targeted negative effect; self-applied negative and unpredictable cards do not consume shields.
 
+## Mini-Game command boundary
+
+`request_mini_game_challenge`, `process_mini_game_queue`, `submit_mini_game_result`, `process_expired_mini_game`, and `get_mini_game_snapshot` derive identity and membership from `auth.uid()`. Room/round locks, participant-lock primary keys, a one-active-per-room partial index, request UUIDs, one-submission-per-attempt constraints, and signed ledger source keys protect queue order, escrow, and exactly-once settlement.
+
+The database chooses the game, 32-byte seed, specification, synchronized start, deadline, and any fallback winner. It independently validates Memory accuracy and Different Symbol targets, range-checks Stop Bar positions, checks feasible timing and receipt windows, and derives all comparison values. Clients cannot submit a winner, score, stake, pot, seed, target, or adjusted result. Public events and private Realtime invalidation hints never include raw submissions, normalized results, seeds, or expected answers.
+
 ## Identity, reconnection, and rooms
 
 Room codes are locators, not credentials. Control requires the original anonymous Supabase session. Private room passwords are verified server-side against a bcrypt-compatible pgcrypto hash with its salt embedded. Display names are trimmed, whitespace-normalized, length-limited, rejected for control characters, escaped by React, and compared case-insensitively inside each active room.
@@ -51,4 +58,4 @@ The frontend receives only `VITE_SUPABASE_URL` and the public/publishable anonym
 
 ## Abuse and residual risk
 
-Server-side validation prevents ordinary score/card forgery, duplicate operations, cross-room actions, and replay. Seeded mini-games intentionally avoid streaming inputs, but a modified client could automate a known game after receiving its seed. Plausibility windows, delayed start specifications, compact validated results, anomaly telemetry, and rate limits reduce this risk; strong competitive integrity would require additional attestation or server-observable input commitments beyond the first release.
+Server-side validation prevents ordinary score/card forgery, duplicate operations, cross-room actions, and replay. Mini-Game participants receive a derived playable specification, never the raw seed; a modified client can still automate visible conditions or falsify plausible local elapsed time. Receipt windows, delayed synchronized starts, compact validated results, seed-derived answer verification, and infeasible-value rejection reduce abuse, but browser timing is not tournament-grade anti-cheat. Strong competitive integrity would require device attestation or server-observable input commitments beyond this MVP.
