@@ -1,0 +1,140 @@
+# ScoreUp
+
+**Draw wisely. Challenge boldly. Score your way to the top.**
+
+ScoreUp is a mobile-first, real-time multiplayer party game for 2–10 players. Hidden point cards create tension, action cards disrupt the leaderboard, and each player holds one skill-based Mini-Game Challenge that can turn a match at exactly the right moment.
+
+> Project status: **Milestone 2 is complete in source.** The public experience now connects to Supabase anonymous authentication, atomic room commands, row-level security, private room-scoped Realtime invalidation, and an authoritative live lobby. Gameplay initialization remains intentionally reserved for Milestone 3.
+
+## Screenshots
+
+Screenshots and hosted preview links will be added during the final deployment milestone.
+
+## Milestone 2 features
+
+- Restored-or-created anonymous Supabase browser sessions with explicit unconfigured, loading, failure, and retry states
+- Atomic, idempotent room creation and serialized room joining through authenticated Postgres RPCs
+- 2–10 player capacity, case-insensitive active-name uniqueness, five-character collision-retried codes, and optional bcrypt-compatible password hashes
+- Authoritative lobby snapshots with ready state, live connection state, host controls, copyable links/codes, leave/remove actions, and server-enforced start eligibility
+- Private room-scoped Realtime broadcasts used only as invalidation hints; clients refetch authorized snapshots after every hint
+- Heartbeat-based connection recovery and activity-triggered host transfer after a 60-second grace period
+- RLS isolation, column-level grants, authenticated command-only writes, and multi-identity pgTAP coverage
+- Shared typed validation contracts plus Vitest and React Testing Library coverage for auth, services, validation, Realtime cleanup, and forms
+
+## Game rules
+
+Every round, each player receives a private point card. On their turn, they either **Lock In** its value or **Challenge** an unresolved opponent. The higher card earns both values; equal cards each keep their own value. Players may also draw a limited number of immediate Mystery Action Cards and use one Mini-Game Challenge token per match. The highest final score wins.
+
+ScoreUp uses points only. It contains no real-money mechanics, purchases, currency, or prizes.
+
+## Technology
+
+- React 19 and strict TypeScript
+- Vite 8 with a Cloudflare-compatible Vinext route layer
+- Tailwind CSS 4 and a token-driven responsive design system
+- Supabase Postgres, Realtime, anonymous authentication, and narrowly scoped RPCs
+- Vitest, React Testing Library, and Playwright (Playwright multiplayer journeys begin with live rooms)
+- Cloudflare deployment output
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[React clients] -->|anonymous JWT + RPC commands| B[Postgres functions]
+    B -->|validated transactions| C[(Postgres + RLS)]
+    C -->|redacted change events| D[Supabase Realtime]
+    D -->|state changed hint| A
+    A -->|authorized snapshot fetch| C
+    E[Cloudflare] -->|serves application| A
+```
+
+The browser is a command requester and renderer, never a game authority. Milestone 2 uses Postgres RPCs because create/join/ready/start/leave operations are compact database transactions and do not need a separate compute hop. Future scores, cards, phases, timers, challenges, and winners remain server-owned. Realtime messages are invalidation hints; reconnecting clients always fetch an authoritative snapshot.
+
+The full [engineering blueprint](docs/product-engineering-plan.md), [database design](docs/database-schema.md), and [security model](docs/security-model.md) document the planned implementation.
+
+## State machine
+
+```mermaid
+flowchart LR
+    L[Lobby] --> D[Deal private cards]
+    D --> A[Action choice]
+    A --> R[Resolve actions]
+    R --> P[Point decisions]
+    P --> M[Mini-games]
+    M --> S[Round summary]
+    S -->|rounds remain| D
+    S -->|final round| F[Finalize + tiebreak]
+    F --> C[Completed]
+```
+
+Each transition will be a versioned, idempotent server command with phase, actor, deadline, and eligibility validation.
+
+## Database design
+
+Milestone 2 implements `rooms`, `players`, and a private join-attempt limiter. Gameplay relations for rounds, cards, decisions, mini-games, and the score ledger remain planned for their owning milestones. Private data is excluded from grants, snapshots, and Realtime payloads. See [docs/database-schema.md](docs/database-schema.md) for the implemented constraints and transaction boundaries.
+
+## Security approach
+
+- Anonymous Supabase identity binds a device session to one room player
+- Row Level Security isolates rooms and hidden card rows
+- Score-changing tables deny direct browser writes
+- RPCs derive the actor from `auth.uid()` and require an anonymous JWT
+- Cryptographically secure server randomness selects cards, seeds, and targets
+- Row/advisory locking and request identifiers prevent duplicate room operations
+- Room codes locate rooms but never grant control of an existing player
+- Passwords are slow-hashed and server-only; service-role credentials never reach Vite
+- Replays, duplicate actions, stale phases, and impossible mini-game results are rejected
+
+## Realtime strategy
+
+Realtime currently carries only a private `{ changed: true }` lobby hint on `room:<uuid>:lobby`. It never carries password material or auth identifiers. Authorized clients refetch `get_lobby_snapshot`, so dropped or coalesced messages cannot make an event stream authoritative. Later milestones may extend the same redacted invalidation pattern to gameplay state.
+
+## Local setup
+
+Prerequisites: Node.js 22.13 or newer and a healthy Docker Desktop daemon.
+
+```bash
+npm install
+cp .env.example .env.local
+npm run db:start
+npm run db:reset
+npm run test:db
+npm run dev
+```
+
+After `npm run db:start`, run `npx supabase status` and copy the local API URL and publishable/anon key into `.env.local` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Never use a service-role key in a Vite variable.
+
+For a hosted project: enable anonymous sign-ins in Supabase Auth; link the CLI with `npx supabase login` and `npx supabase link --project-ref <project-ref>`; apply the migration with `npx supabase db push`; use the hosted project URL and publishable key in the frontend environment; and require private Realtime channels (disable public channel access). See [Milestone 2 operations](docs/milestone-2.md) for the full setup and recovery notes.
+
+## Testing
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run db:lint
+npm run test:db
+npm run format:check
+npm run build
+```
+
+The TypeScript suite covers configuration, anonymous-session restoration/creation, shared contracts, RPC error mapping, response redaction, Realtime cleanup, and create/join forms. pgTAP exercises four identities against real RLS/RPC boundaries, including create idempotency, join/reconnect, password rejection, capacity, duplicate names, unauthorized reads/writes, ready/start rules, host removal, room-code uniqueness, and host transfer.
+
+## Deployment
+
+The production application is designed for Cloudflare deployment with Supabase as its only game backend. The final deployment milestone will document project creation, migrations, Edge Function deployment, allowed origins, SPA routing, environment settings, monitoring, and smoke tests. No real credentials belong in source control.
+
+## Portfolio engineering highlights
+
+- Real-time multiplayer synchronization
+- Server-authoritative state machine
+- Hidden-information security with PostgreSQL RLS
+- Transactional point transfers and append-only score ledger
+- Idempotent commands and replay protection
+- Reconnection with snapshot recovery
+- Seeded, bandwidth-efficient mini-games
+- Accessible mobile game-interface design
+
+## Future improvements
+
+Custom card packs, spectator mode, private tournaments, replay timelines, additional accessible mini-games, moderation tools, and telemetry-driven deck balancing are natural extensions after the core game is proven.
