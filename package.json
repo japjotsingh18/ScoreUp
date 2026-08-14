@@ -19,8 +19,8 @@
     "db:reset": "supabase db reset --local",
     "db:lint": "supabase db lint --local --level warning",
     "db:types": "supabase gen types typescript --local > src/types/database.generated.ts",
-    "format": "prettier --write \"app/**/*.{ts,tsx,css}\" \"src/**/*.{ts,tsx}\" \"e2e/**/*.{ts,tsx}\" \"docs/**/*.md\" README.md package.json playwright.config.ts vite.config.ts vitest.config.ts",
-    "format:check": "prettier --check \"app/**/*.{ts,tsx,css}\" \"src/**/*.{ts,tsx}\" \"e2e/**/*.{ts,tsx}\" \"docs/**/*.md\" README.md package.json playwright.config.ts vite.config.ts vitest.config.ts",
+    "format": "prettier --write \"app/**/*.{ts,tsx,css}\" \"src/**/*.{ts,tsx}\" \"worker/**/*.{ts,tsx}\" \"e2e/**/*.{ts,tsx}\" \".github/**/*.{yml,yaml}\" \"docs/**/*.md\" README.md package.json playwright.config.ts vite.config.ts vitest.config.ts",
+    "format:check": "prettier --check \"app/**/*.{ts,tsx,css}\" \"src/**/*.{ts,tsx}\" \"worker/**/*.{ts,tsx}\" \"e2e/**/*.{ts,tsx}\" \".github/**/*.{yml,yaml}\" \"docs/**/*.md\" README.md package.json playwright.config.ts vite.config.ts vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app src worker e2e vite.config.ts vitest.config.ts playwright.config.ts"
   },

@@ -4,7 +4,9 @@
 
 ScoreUp is a mobile-first, real-time multiplayer party game for 2–10 players. Hidden point cards create tension, action cards disrupt the leaderboard, and each player holds one skill-based Mini-Game Challenge that can turn a match at exactly the right moment.
 
-> Project status: **Milestone 6 Game Completion and Polish is implemented.** ScoreUp now reaches an authoritative final result, resolves tied leaders without changing scores, records rankings and match awards, supports fresh-room rematches, and includes verified two-context browser coverage. Deployment remains Milestone 7 work.
+> Project status: **Milestone 7 production release is in progress.** Milestones 1–6 are committed and locally verified. Production configuration, CI, deployment, hosted migrations, and live smoke testing must all pass before ScoreUp is declared production-ready.
+
+[GitHub repository](https://github.com/japjotsingh18/ScoreUp) · Live demo will be linked after the verified production deployment.
 
 ## Screenshots
 
@@ -56,7 +58,7 @@ ScoreUp uses points only. It contains no real-money mechanics, purchases, curren
 - Tailwind CSS 4 and a token-driven responsive design system
 - Supabase Postgres, Realtime, anonymous authentication, and narrowly scoped RPCs
 - Vitest, React Testing Library, and pgTAP database integration tests
-- Cloudflare deployment output
+- Cloudflare Sites deployment with a Vinext Worker and immutable static assets
 
 ## Architecture
 
@@ -72,7 +74,7 @@ flowchart LR
 
 The browser is a command requester and renderer, never a game authority. Postgres RPCs own room and game transactions, including action-card selection, Mini-Game queueing, escrow, validation, and resolution. The browser never submits an authoritative score, stake, pot, seed, target, winner, adjusted result, random outcome, or actor identity. Realtime messages are invalidation hints; reconnecting clients always fetch an authoritative actor-specific snapshot.
 
-The full [engineering blueprint](docs/product-engineering-plan.md), [database design](docs/database-schema.md), and [security model](docs/security-model.md) document the planned implementation.
+The full [production architecture](docs/architecture.md), [engineering blueprint](docs/product-engineering-plan.md), [database design](docs/database-schema.md), and [security model](docs/security-model.md) document the implementation and trust boundaries.
 
 ## State machine
 
@@ -148,13 +150,38 @@ npm run format:check
 npm run build
 ```
 
-The TypeScript suite covers configuration, session restoration, strict lobby/game/completion contracts, compact commands, preferences, accessible challenge/final UI, RPC error mapping, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, finalization, ranking, statistics, championship outcomes, rematch isolation, queue/escrow rules, privacy, and replay safety. Playwright runs real Chromium against local Supabase with two isolated anonymous contexts; its provisioning helper refuses non-loopback application origins and keeps all database-owner access outside browser code.
+The TypeScript suite covers configuration, session restoration, strict lobby/game/completion contracts, compact commands, preferences, accessible challenge/final UI, RPC error mapping, Realtime cleanup, security-header construction, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, finalization, ranking, statistics, championship outcomes, rematch isolation, queue/escrow rules, privacy, and replay safety. Playwright runs real Chromium against local Supabase with two isolated anonymous contexts; its provisioning helper refuses non-loopback application origins and keeps all database-owner access outside browser code.
 
 `npm audit --omit=dev` is clean after the non-major Next.js 16.3.1 toolchain update, which also resolves the affected transitive Nano ID, PostCSS, and Sharp versions. No forced audit remediation was used.
 
-## Deployment
+## Production deployment
 
-The production application is designed for Cloudflare deployment with Supabase as its only game backend. The final deployment milestone will document project creation, migrations, Edge Function deployment, allowed origins, SPA routing, environment settings, monitoring, and smoke tests. No real credentials belong in source control.
+Vinext emits a Worker/RSC entry point plus static client assets, so ScoreUp deploys through the repository's Cloudflare-backed Sites configuration rather than a static-only Pages directory. The Worker applies security headers to dynamic responses; `_headers` applies the matching policy to static assets. Hashed assets are cached immutably, while HTML and RSC responses are not cached.
+
+Production requires a dedicated Supabase project with anonymous sign-ins enabled, private Realtime channels, the exact Cloudflare HTTPS origin in Auth settings, and all checked-in migrations applied in order. Do not run the local seed, pgTAP fixtures, provisioning helpers, or any reset command against production.
+
+Public browser environment variables:
+
+| Variable                        | Purpose                                      |
+| ------------------------------- | -------------------------------------------- |
+| `VITE_SUPABASE_URL`             | Production Supabase HTTPS API origin         |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public browser key protected by RLS and RPCs |
+
+Never expose the service-role/secret key, database password, Supabase access token, or Cloudflare credential to browser code. Vite variables are public by design.
+
+See the [production runbook](docs/operations.md) for release, migration, rollback, monitoring, backup, credential-rotation, incident-response, and safe-disable procedures. The [Milestone 7 record](docs/milestone-7.md) explains the deployment architecture decision.
+
+## Accessibility
+
+ScoreUp uses semantic landmarks and headings, keyboard-operable actions and Mini-Games, labeled controls, non-color status text, live error/status regions, persistent reduced-motion preferences, mobile touch targets, and automated axe checks for serious/critical findings. Automated coverage is a release guard, not a claim of complete WCAG conformance.
+
+## Known limitations
+
+- Host transfer, stale-seat cleanup, and game deadlines are activity-triggered rather than scheduler-driven.
+- Browser-measured Mini-Game and championship timing is bounded and server-validated but is not tournament-grade device attestation.
+- Anonymous players can lose their seat identity if they clear the stored browser session.
+- Native Web Share is not enabled; final results use public-safe clipboard text with a manual-copy fallback.
+- The Free Supabase plan can pause after inactivity and requires regular logical exports for stronger recovery expectations.
 
 ## Portfolio engineering highlights
 

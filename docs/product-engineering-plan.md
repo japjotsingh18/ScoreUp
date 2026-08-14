@@ -4,7 +4,7 @@
 
 ScoreUp will be delivered as seven independently verifiable milestones. Each milestone must pass its relevant automated tests and production build before work begins on the next one.
 
-Milestones 1–6 are implemented and locally verified. Milestone 7 has not started.
+Milestones 1–6 are implemented and locally verified. Milestone 7 production configuration and documentation are in progress; deployment is accepted only after remote CI, hosted migrations, live delivery, headers, and two-session smoke testing pass.
 
 1. **Frontend foundation** — establish the React/TypeScript/Vite/Tailwind shell, routes, visual language, accessible forms, rules, and a representative lobby using typed mock data.
 2. **Multiplayer foundation** — add Supabase anonymous auth, normalized Postgres migrations, RLS, room RPCs, lobby presence, ready state, host controls, and secure password verification.

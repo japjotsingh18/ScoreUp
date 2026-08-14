@@ -67,6 +67,8 @@ Playwright provisioning is Node-only, validates a loopback application origin an
 
 The frontend receives only `VITE_SUPABASE_URL` and the public/publishable anonymous key. The Supabase service-role key is never required by this milestone and must not enter a Vite variable. Production Realtime channels must remain private, logs should redact payloads, error responses avoid internal detail, and dependency/security monitoring is part of deployment readiness.
 
+The Cloudflare Worker and static asset configuration apply a shared CSP with exact Supabase HTTPS and WSS origins, frame denial, no object embedding, strict referrer behavior, limited browser capabilities, MIME-sniffing protection, and HTTPS transport security. Vinext's inline RSC bootstrap and embedded font styles currently require documented `'unsafe-inline'` script/style allowances; no third-party script/style origin or unrestricted CSP wildcard is allowed. Dynamic HTML/RSC responses are not cached, while content-hashed assets are immutable.
+
 ## Abuse and residual risk
 
 Server-side validation prevents ordinary score/card forgery, duplicate operations, cross-room actions, and replay. Mini-Game participants receive a derived playable specification, never the raw seed; a modified client can still automate visible conditions or falsify plausible local elapsed time. Receipt windows, delayed synchronized starts, compact validated results, seed-derived answer verification, and infeasible-value rejection reduce abuse, but browser timing is not tournament-grade anti-cheat. Strong competitive integrity would require device attestation or server-observable input commitments beyond this MVP.
