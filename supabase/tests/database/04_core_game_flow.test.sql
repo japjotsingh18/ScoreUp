@@ -3,6 +3,27 @@ set local search_path = public, extensions;
 
 select plan(48);
 
+create function pg_temp.complete_action_phase(p_room_id uuid)
+returns void
+language plpgsql
+as $$
+declare
+  v_round public.rounds%rowtype;
+begin
+  select * into strict v_round from public.rounds
+  where room_id = p_room_id and status = 'active';
+  insert into public.action_choices (
+    id, round_id, room_id, round_number, player_id, choice, idempotency_key
+  )
+  select gen_random_uuid(), v_round.id, p_room_id, v_round.round_number,
+    p.id, 'skip', gen_random_uuid()
+  from public.players p
+  where p.room_id = p_room_id and p.match_participant and p.left_at is null
+  on conflict (round_id, player_id) do nothing;
+  perform private.maybe_complete_action_phase(p_room_id, v_round.id);
+end;
+$$;
+
 insert into auth.users (id, aud, role, is_anonymous, created_at, updated_at)
 select
   ('30000000-0000-4000-8000-' || lpad(value::text, 12, '0'))::uuid,
@@ -51,7 +72,7 @@ reset role;
 
 select is((select status from public.rooms where id = current_setting('scoreup.core_room_id')::uuid), 'in_progress'::public.room_status, 'match enters in-progress status');
 select is((select current_round from public.rooms where id = current_setting('scoreup.core_room_id')::uuid), 1::smallint, 'match starts at round one');
-select is((select current_phase from public.rooms where id = current_setting('scoreup.core_room_id')::uuid), 'point_decisions'::public.game_phase, 'dealing atomically reaches point decisions');
+select is((select current_phase from public.rooms where id = current_setting('scoreup.core_room_id')::uuid), 'action_choice'::public.game_phase, 'dealing atomically reaches action choice');
 select is((select count(*) from public.players where room_id = current_setting('scoreup.core_room_id')::uuid and match_participant), 4::bigint, 'the connected roster is frozen');
 select is((select count(*) from public.rounds where room_id = current_setting('scoreup.core_room_id')::uuid), 1::bigint, 'duplicate start creates only one round');
 select is((select count(*) from public.round_cards_private where room_id = current_setting('scoreup.core_room_id')::uuid), 4::bigint, 'one private card is dealt per participant');
@@ -60,6 +81,7 @@ select ok(not exists (
   where room_id = current_setting('scoreup.core_room_id')::uuid
     and original_value not in (0, 100, 250, 500, 750, 1000)
 ), 'every generated card uses an allowed deck value');
+select pg_temp.complete_action_phase(current_setting('scoreup.core_room_id')::uuid);
 select is((
   select count(distinct player_id) from unnest((select decision_order from public.rounds where room_id = current_setting('scoreup.core_room_id')::uuid)) player_id
 ), 4::bigint, 'secure decision order contains every participant exactly once');
@@ -160,6 +182,7 @@ select lives_ok(
   'replaying a round advance safely returns the current round'
 );
 reset role;
+select pg_temp.complete_action_phase(current_setting('scoreup.core_room_id')::uuid);
 select is((select current_round from public.rooms where id = current_setting('scoreup.core_room_id')::uuid), 2::smallint, 'next round initializes exactly once');
 select isnt((select decision_order::text from public.rounds where room_id = current_setting('scoreup.core_room_id')::uuid and round_number = 2), current_setting('scoreup.round_one_order'), 'the next round receives a new order');
 select is((select count(*) from public.round_cards_private where room_id = current_setting('scoreup.core_room_id')::uuid and round_number = 2), 4::bigint, 'next round deals one new card per participant');

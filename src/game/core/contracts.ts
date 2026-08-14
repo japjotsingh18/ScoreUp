@@ -94,6 +94,7 @@ function oneOf<T extends string | number>(
 
 export const gamePhases = [
   "dealing",
+  "action_choice",
   "point_decisions",
   "round_summary",
   "completed",
@@ -115,6 +116,12 @@ export type PointDecisionType =
 
 export const gameEventTypes = [
   "round_started",
+  "action_phase_started",
+  "action_target_required",
+  "action_card_resolved",
+  "action_skipped",
+  "action_auto_skipped",
+  "action_phase_completed",
   "turn_started",
   "player_locked_in",
   "challenge_started",
@@ -125,6 +132,67 @@ export const gameEventTypes = [
   "match_completed",
 ] as const;
 export type GameEventType = (typeof gameEventTypes)[number];
+
+export const actionCardCategories = [
+  "positive",
+  "negative",
+  "unpredictable",
+] as const;
+export type ActionCardCategory = (typeof actionCardCategories)[number];
+
+export const actionCardCodes = [
+  "score_boost",
+  "double_up",
+  "point_swipe",
+  "shield",
+  "fresh_draw",
+  "bonus_momentum",
+  "point_penalty",
+  "bad_move",
+  "forced_share",
+  "score_drop",
+  "empty_round",
+  "leader_bonus",
+  "double_or_zero",
+  "random_card_swap",
+  "shared_fate",
+  "comeback_card",
+  "mystery_multiplier",
+  "reverse_swipe",
+] as const;
+export type ActionCardCode = (typeof actionCardCodes)[number];
+export type ActionChoiceType = "draw" | "skip";
+export type ActionDrawStatus = "selected" | "awaiting_target" | "resolved";
+
+export type ActionDrawSnapshot = {
+  id: string;
+  cardCode: ActionCardCode;
+  displayName: string;
+  category: ActionCardCategory;
+  description: string;
+  status: ActionDrawStatus;
+  targetPlayerId: string | null;
+  targetDeadline: string | null;
+  eligibleTargetIds: string[];
+  privateResult: Record<string, unknown>;
+  publicResult: Record<string, unknown>;
+  drawnAt: string;
+  resolvedAt: string | null;
+};
+
+export type ActionState = {
+  phaseDeadline: string | null;
+  respondedCount: number;
+  participantCount: number;
+  drawsRemaining: number;
+  shieldActive: boolean;
+  choice: {
+    choice: ActionChoiceType;
+    automatic: boolean;
+    createdAt: string;
+  } | null;
+  draw: ActionDrawSnapshot | null;
+};
 
 export type MatchPlayer = {
   id: string;
@@ -214,6 +282,7 @@ export type MatchSnapshot = {
     completedAt: string | null;
   };
   privatePlayer: PrivatePlayerState;
+  actionState: ActionState;
   eligibleChallengeTargetIds: string[];
   roundSummaries: RoundSummary[];
   recentEvents: PublicGameEvent[];
@@ -247,6 +316,47 @@ function parseEvent(value: unknown): PublicGameEvent {
     actorPlayerId: nullable(event.actorPlayerId, uuid),
     payload: object(event.payload),
     createdAt: date(event.createdAt),
+  };
+}
+
+function parseActionState(value: unknown): ActionState {
+  const state = object(value);
+  const choice = state.choice === null ? null : object(state.choice);
+  const draw = state.draw === null ? null : object(state.draw);
+  return {
+    phaseDeadline: nullable(state.phaseDeadline, date),
+    respondedCount: integer(state.respondedCount),
+    participantCount: integer(state.participantCount),
+    drawsRemaining: integer(state.drawsRemaining),
+    shieldActive: boolean(state.shieldActive),
+    choice: choice
+      ? {
+          choice: oneOf(choice.choice, ["draw", "skip"] as const),
+          automatic: boolean(choice.automatic),
+          createdAt: date(choice.createdAt),
+        }
+      : null,
+    draw: draw
+      ? {
+          id: uuid(draw.id),
+          cardCode: oneOf(draw.cardCode, actionCardCodes),
+          displayName: string(draw.displayName),
+          category: oneOf(draw.category, actionCardCategories),
+          description: string(draw.description),
+          status: oneOf(draw.status, [
+            "selected",
+            "awaiting_target",
+            "resolved",
+          ] as const),
+          targetPlayerId: nullable(draw.targetPlayerId, uuid),
+          targetDeadline: nullable(draw.targetDeadline, date),
+          eligibleTargetIds: array(draw.eligibleTargetIds).map(uuid),
+          privateResult: object(draw.privateResult),
+          publicResult: object(draw.publicResult),
+          drawnAt: date(draw.drawnAt),
+          resolvedAt: nullable(draw.resolvedAt, date),
+        }
+      : null,
   };
 }
 
@@ -340,6 +450,7 @@ export const matchSnapshotSchema = schema<MatchSnapshot>((value) => {
       actionDrawsUsed: integer(privatePlayer.actionDrawsUsed),
       miniGameTokenUsed: boolean(privatePlayer.miniGameTokenUsed),
     },
+    actionState: parseActionState(snapshot.actionState),
     eligibleChallengeTargetIds: array(snapshot.eligibleChallengeTargetIds).map(
       uuid,
     ),
@@ -387,6 +498,47 @@ export const timeoutInputSchema = schema<{
   };
 });
 
+export const actionChoiceInputSchema = schema<{
+  roomId: string;
+  choice: ActionChoiceType;
+  idempotencyKey: string;
+}>((value) => {
+  const input = object(value);
+  return {
+    roomId: uuid(input.roomId),
+    choice: oneOf(input.choice, ["draw", "skip"] as const),
+    idempotencyKey: uuid(input.idempotencyKey),
+  };
+});
+
+export const actionTargetInputSchema = schema<{
+  roomId: string;
+  actionDrawId: string;
+  targetPlayerId: string;
+  idempotencyKey: string;
+}>((value) => {
+  const input = object(value);
+  return {
+    roomId: uuid(input.roomId),
+    actionDrawId: uuid(input.actionDrawId),
+    targetPlayerId: uuid(input.targetPlayerId),
+    idempotencyKey: uuid(input.idempotencyKey),
+  };
+});
+
+export const actionTimeoutInputSchema = schema<{
+  roomId: string;
+  actionDrawId: string;
+  idempotencyKey: string;
+}>((value) => {
+  const input = object(value);
+  return {
+    roomId: uuid(input.roomId),
+    actionDrawId: uuid(input.actionDrawId),
+    idempotencyKey: uuid(input.idempotencyKey),
+  };
+});
+
 export const gameErrorCodes = [
   "NOT_MATCH_PARTICIPANT",
   "MATCH_NOT_FOUND",
@@ -400,6 +552,12 @@ export const gameErrorCodes = [
   "IDEMPOTENCY_CONFLICT",
   "DEADLINE_NOT_EXPIRED",
   "STALE_TURN",
+  "ACTION_ALLOWANCE_EXHAUSTED",
+  "ACTION_DEADLINE_EXPIRED",
+  "ACTION_DRAW_NOT_FOUND",
+  "ACTION_ALREADY_RESOLVED",
+  "TARGET_DEADLINE_EXPIRED",
+  "NO_ELIGIBLE_TARGET",
   "OPERATION_TIMEOUT",
   "UNKNOWN_ERROR",
 ] as const;
@@ -418,6 +576,15 @@ export const gameErrorMessages: Record<GameErrorCode, string> = {
   IDEMPOTENCY_CONFLICT: "That request identifier was already used.",
   DEADLINE_NOT_EXPIRED: "The server deadline has not expired yet.",
   STALE_TURN: "The turn already advanced. Refreshing the match…",
+  ACTION_ALLOWANCE_EXHAUSTED:
+    "You have no Mystery Action Card draws remaining.",
+  ACTION_DEADLINE_EXPIRED:
+    "The action phase ended. Processing automatic skips…",
+  ACTION_DRAW_NOT_FOUND: "That action-card draw is no longer available.",
+  ACTION_ALREADY_RESOLVED: "That action card has already resolved.",
+  TARGET_DEADLINE_EXPIRED:
+    "Target selection expired. The server is choosing securely…",
+  NO_ELIGIBLE_TARGET: "No eligible target remains for this action card.",
   OPERATION_TIMEOUT: "The request took too long. Check your connection.",
   UNKNOWN_ERROR: "The game could not process that action. Please retry.",
 };

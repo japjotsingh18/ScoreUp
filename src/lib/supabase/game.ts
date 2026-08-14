@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  actionChoiceInputSchema,
+  actionTargetInputSchema,
+  actionTimeoutInputSchema,
   challengeInputSchema,
   gameErrorCodes,
   lockInInputSchema,
@@ -8,6 +11,7 @@ import {
   timeoutInputSchema,
   type GameErrorCode,
   type MatchSnapshot,
+  type ActionChoiceType,
 } from "../../game/core/contracts";
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -127,6 +131,75 @@ export function advanceRound(
   const input = lockInInputSchema.parse({ roomId, idempotencyKey });
   return runGameRpc(client, "advance_round_summary", {
     p_room_id: input.roomId,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
+export function submitActionChoice(
+  client: SupabaseClient,
+  roomId: string,
+  choice: ActionChoiceType,
+  idempotencyKey: string,
+) {
+  const input = actionChoiceInputSchema.parse({
+    roomId,
+    choice,
+    idempotencyKey,
+  });
+  return runGameRpc(client, "submit_action_choice", {
+    p_room_id: input.roomId,
+    p_choice: input.choice,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
+export function submitActionTarget(
+  client: SupabaseClient,
+  roomId: string,
+  actionDrawId: string,
+  targetPlayerId: string,
+  idempotencyKey: string,
+) {
+  const input = actionTargetInputSchema.parse({
+    roomId,
+    actionDrawId,
+    targetPlayerId,
+    idempotencyKey,
+  });
+  return runGameRpc(client, "submit_action_target", {
+    p_room_id: input.roomId,
+    p_action_draw_id: input.actionDrawId,
+    p_target_player_id: input.targetPlayerId,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
+export function processActionPhaseTimeout(
+  client: SupabaseClient,
+  roomId: string,
+  idempotencyKey: string,
+) {
+  const input = lockInInputSchema.parse({ roomId, idempotencyKey });
+  return runGameRpc(client, "process_expired_action_phase", {
+    p_room_id: input.roomId,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
+export function processActionTargetTimeout(
+  client: SupabaseClient,
+  roomId: string,
+  actionDrawId: string,
+  idempotencyKey: string,
+) {
+  const input = actionTimeoutInputSchema.parse({
+    roomId,
+    actionDrawId,
+    idempotencyKey,
+  });
+  return runGameRpc(client, "process_expired_action_target", {
+    p_room_id: input.roomId,
+    p_action_draw_id: input.actionDrawId,
     p_idempotency_key: input.idempotencyKey,
   });
 }

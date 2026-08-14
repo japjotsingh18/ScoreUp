@@ -4,13 +4,13 @@
 
 ScoreUp is a mobile-first, real-time multiplayer party game for 2–10 players. Hidden point cards create tension, action cards disrupt the leaderboard, and each player holds one skill-based Mini-Game Challenge that can turn a match at exactly the right moment.
 
-> Project status: **Milestone 3 Core Game is implemented.** ScoreUp now runs an authoritative point-card match from atomic initialization through final-round completion, while Action Cards and Mini-Game Challenges remain reserved for later milestones.
+> Project status: **Milestone 4 Action Cards is implemented.** ScoreUp now includes the complete server-authoritative 18-card Mystery Action system. Mini-Game Challenges remain reserved for Milestone 5.
 
 ## Screenshots
 
 Screenshots and hosted preview links will be added during the final deployment milestone.
 
-## Milestone 3 features
+## Milestone 4 features
 
 - Restored-or-created anonymous Supabase browser sessions with explicit unconfigured, loading, failure, and retry states
 - Atomic, idempotent room creation and serialized room joining through authenticated Postgres RPCs
@@ -25,6 +25,10 @@ Screenshots and hosted preview links will be added during the final deployment m
 - Private-card RLS isolation, actor-specific reconnection snapshots, append-only score awards, and redacted public events
 - Server-timed turns and summaries with activity-triggered overdue processing
 - Responsive core-game UI with private card, countdown, challenge targeting, leaderboard, public feed, round summaries, and tied-first completion
+- Shared action-choice phase with automatic skips, per-match allowances, target sub-state, and server deadlines
+- Weighted private 18-card catalog with immediate transactional score/card effects, shields, and mutation audit history
+- Signed action score-ledger entries, owner-only card results, public-safe events, and idempotent Draw/Skip/target RPCs
+- Accessible responsive card reveal, target selection, pending-player progress, shield status, reconnect recovery, and reduced-motion support
 
 ## Game rules
 
@@ -53,7 +57,7 @@ flowchart LR
     E[Cloudflare] -->|serves application| A
 ```
 
-The browser is a command requester and renderer, never a game authority. Milestone 2 uses Postgres RPCs because create/join/ready/start/leave operations are compact database transactions and do not need a separate compute hop. Future scores, cards, phases, timers, challenges, and winners remain server-owned. Realtime messages are invalidation hints; reconnecting clients always fetch an authoritative snapshot.
+The browser is a command requester and renderer, never a game authority. Postgres RPCs own room and game transactions, including action-card selection and resolution. The browser never submits a card code, probability, score, point-card value, effect parameter, random outcome, or actor identity. Realtime messages are invalidation hints; reconnecting clients always fetch an authoritative actor-specific snapshot.
 
 The full [engineering blueprint](docs/product-engineering-plan.md), [database design](docs/database-schema.md), and [security model](docs/security-model.md) document the planned implementation.
 
@@ -63,20 +67,21 @@ The full [engineering blueprint](docs/product-engineering-plan.md), [database de
 flowchart LR
     L[Lobby] --> D[Deal private cards]
     D --> A[Action choice]
-    A --> R[Resolve actions]
+    A -->|no target| R[Resolve immediately]
+    A -->|targeted card| T[Await target up to 10s]
+    T --> R
     R --> P[Point decisions]
-    P --> M[Mini-games]
-    M --> S[Round summary]
+    P --> S[Round summary]
     S -->|rounds remain| D
     S -->|final round| F[Finalize + tiebreak]
     F --> C[Completed]
 ```
 
-Each transition will be a versioned, idempotent server command with phase, actor, deadline, and eligibility validation.
+Every implemented transition is a versioned, idempotent server command with phase, actor, deadline, and eligibility validation. The action phase cannot close while a persisted draw awaits a target.
 
 ## Database design
 
-Milestone 3 adds normalized rounds, private cards, decisions, a score ledger, and redacted game events. Action-card and Mini-Game relations remain planned for their owning milestones. See [docs/database-schema.md](docs/database-schema.md) and [the Core Game decisions](docs/milestone-3.md).
+Milestone 4 adds normalized action choices/draws, a private weighted catalog, temporary shields, point-card mutation receipts, action references in the signed score ledger, and actor-private action snapshots. See [docs/database-schema.md](docs/database-schema.md), [Core Game decisions](docs/milestone-3.md), and [Action Card decisions](docs/milestone-4.md).
 
 ## Security approach
 
@@ -123,7 +128,7 @@ npm run format:check
 npm run build
 ```
 
-The TypeScript suite covers configuration, session restoration, strict lobby/game contracts, RPC error mapping, redacted commands, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries and deterministic game fixtures for initialization, card isolation, scoring, challenge outcomes, timeouts, round progression, final ties, and reconnection.
+The TypeScript suite covers configuration, session restoration, strict lobby/game/action contracts, redacted commands, RPC error mapping, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries, all 18 action effects, weighted catalog totals, targeted resolution, shield consumption, rounding, allowances, automatic skips, replay safety, privacy, Core Game rules, and reconnection.
 
 ## Deployment
 

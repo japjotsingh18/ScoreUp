@@ -15,6 +15,7 @@ Narrowly scoped Postgres RPCs form the Milestone 2 command boundary. The databas
 - Direct inserts, updates, and deletes on rooms and players are denied to browser roles; authenticated functions perform the allowed mutations after actor checks.
 - Match participants can read public rounds/events/decisions. An unresolved private card is visible only to its authenticated owner; completed rounds reveal cards to participants. The score ledger has no browser grant.
 - Direct browser inserts, updates, and deletes on rounds, cards, decisions, scores, deadlines, phases, and events are denied.
+- Action choices and draws force RLS and are owner-selectable only. The catalog, shields, mutation audit, score ledger, random selectors, and deterministic test controls have no browser grants.
 
 ## Command protections
 
@@ -31,6 +32,12 @@ Narrowly scoped Postgres RPCs form the Milestone 2 command boundary. The databas
 `start_room`, `lock_in_point_card`, `challenge_point_card`, `process_expired_turn`, and `advance_round_summary` are fixed-search-path definers with minimal authenticated grants. They derive the actor from `auth.uid()`, lock authoritative rows, reject stale phases/turns/deadlines/targets, and use unique decisions, ledger sources, or private receipts to stop double awards and replay.
 
 Public challenge events reveal only the two cards after both are resolved. General turn, timeout, score, and round events contain no card values. Realtime sends only `{ changed: true }`; clients then fetch a fresh actor-specific snapshot.
+
+## Action Card command boundary
+
+`submit_action_choice`, `submit_action_target`, `process_expired_action_phase`, and `process_expired_action_target` derive membership from `auth.uid()`, lock the room/round/draw, enforce phase and deadline state, and return a validated owner-specific snapshot. Weighted selection uses `gen_random_bytes`; normal clients cannot supply or invoke card codes, weights, effect parameters, secure targets, or outcomes. Database-owner-only settings make random branches deterministic in rolled-back pgTAP transactions, and selector helpers have no authenticated execute grant.
+
+Before summary, an owner sees their own card name and private result. Other clients see only allowlisted public event data. Fresh Draw and Random Card Swap events disclose no old/new point values. Only Point Swipe is classified as a shield-blockable targeted negative effect; self-applied negative and unpredictable cards do not consume shields.
 
 ## Identity, reconnection, and rooms
 

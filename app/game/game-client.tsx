@@ -7,6 +7,8 @@ import {
   Radio,
   RefreshCcw,
   ShieldAlert,
+  ShieldCheck,
+  Sparkles,
   Swords,
   Trophy,
   UserRound,
@@ -27,6 +29,10 @@ import {
   GameOperationError,
   lockIn,
   processTimeout,
+  processActionPhaseTimeout,
+  processActionTargetTimeout,
+  submitActionChoice,
+  submitActionTarget,
 } from "../../src/lib/supabase/game";
 import {
   subscribeToGame,
@@ -56,6 +62,18 @@ function eventCopy(event: PublicGameEvent, snapshot: MatchSnapshot) {
   switch (event.type) {
     case "round_started":
       return `Round ${event.roundNumber} started.`;
+    case "action_phase_started":
+      return "Mystery Action Card choices are open.";
+    case "action_target_required":
+      return `${actor ?? "A player"} is choosing an action-card target.`;
+    case "action_card_resolved":
+      return `${actor ?? "A player"} resolved ${String(event.payload.cardCode).replaceAll("_", " ")}.`;
+    case "action_skipped":
+      return `${actor ?? "A player"} skipped their action draw.`;
+    case "action_auto_skipped":
+      return `${actor ?? "A player"} was automatically skipped.`;
+    case "action_phase_completed":
+      return "Action cards resolved. Point decisions are starting.";
     case "turn_started":
       return `${actor ?? "A player"} is choosing.`;
     case "player_locked_in":
@@ -96,13 +114,25 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   const requestSequence = useRef(0);
   const timeoutAttempt = useRef("");
   const summaryAttempt = useRef("");
+  const actionTimeoutAttempt = useRef("");
 
   const applySnapshot = useCallback((next: MatchSnapshot) => {
     setSnapshot(next);
     setError("");
-    setRemaining(secondsUntil(next.room.phaseDeadline));
+    setRemaining(
+      secondsUntil(
+        next.actionState.draw?.status === "awaiting_target"
+          ? next.actionState.draw.targetDeadline
+          : next.room.phaseDeadline,
+      ),
+    );
     setTargetId((current) =>
-      next.eligibleChallengeTargetIds.includes(current) ? current : "",
+      (next.room.phase === "action_choice"
+        ? next.actionState.draw?.eligibleTargetIds
+        : next.eligibleChallengeTargetIds
+      )?.includes(current)
+        ? current
+        : "",
     );
   }, []);
 
@@ -136,14 +166,48 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   }, [authClient, refresh, roomId]);
 
   useEffect(() => {
-    if (!snapshot?.room.phaseDeadline) return;
-    const tick = () => setRemaining(secondsUntil(snapshot.room.phaseDeadline));
+    const deadline =
+      snapshot?.actionState.draw?.status === "awaiting_target"
+        ? snapshot.actionState.draw.targetDeadline
+        : snapshot?.room.phaseDeadline;
+    if (!deadline) return;
+    const tick = () => setRemaining(secondsUntil(deadline));
     const interval = window.setInterval(tick, 250);
     return () => window.clearInterval(interval);
-  }, [snapshot?.room.phaseDeadline]);
+  }, [snapshot?.actionState.draw, snapshot?.room.phaseDeadline]);
 
   useEffect(() => {
     if (!authClient || !snapshot || remaining > 0 || pending) return;
+    if (snapshot.room.phase === "action_choice") {
+      const awaiting = snapshot.actionState.draw?.status === "awaiting_target";
+      const attempt = `${snapshot.room.currentRound}:${awaiting ? snapshot.actionState.draw?.id : "phase"}`;
+      if (actionTimeoutAttempt.current === attempt) return;
+      actionTimeoutAttempt.current = attempt;
+      const timer = window.setTimeout(() => {
+        setPending(awaiting ? "action-target-timeout" : "action-timeout");
+        const operation =
+          awaiting && snapshot.actionState.draw
+            ? processActionTargetTimeout(
+                authClient,
+                snapshot.room.id,
+                snapshot.actionState.draw.id,
+                crypto.randomUUID(),
+              )
+            : processActionPhaseTimeout(
+                authClient,
+                snapshot.room.id,
+                crypto.randomUUID(),
+              );
+        void operation
+          .then(applySnapshot)
+          .catch((cause) => {
+            setError(messageFor(cause));
+            void refresh();
+          })
+          .finally(() => setPending(null));
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
     if (
       snapshot.room.phase === "point_decisions" &&
       snapshot.room.currentTurnPlayerId
@@ -207,6 +271,57 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   const latestChallenge = [...(snapshot?.recentEvents ?? [])]
     .reverse()
     .find((event) => event.type === "challenge_resolved");
+
+  async function chooseAction(choice: "draw" | "skip") {
+    if (auth.status !== "ready" || !snapshot) return;
+    if (
+      choice === "draw" &&
+      !window.confirm(
+        "Draw now? The server will select and immediately apply the card; it cannot be rejected or exchanged.",
+      )
+    )
+      return;
+    setPending(`action-${choice}`);
+    setNotice("");
+    try {
+      applySnapshot(
+        await submitActionChoice(
+          auth.client,
+          snapshot.room.id,
+          choice,
+          crypto.randomUUID(),
+        ),
+      );
+    } catch (cause) {
+      setError(messageFor(cause));
+      void refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function chooseActionTarget() {
+    const draw = snapshot?.actionState.draw;
+    if (auth.status !== "ready" || !snapshot || !draw || !targetId) return;
+    setPending("action-target");
+    setNotice("");
+    try {
+      applySnapshot(
+        await submitActionTarget(
+          auth.client,
+          snapshot.room.id,
+          draw.id,
+          targetId,
+          crypto.randomUUID(),
+        ),
+      );
+    } catch (cause) {
+      setError(messageFor(cause));
+      void refresh();
+    } finally {
+      setPending(null);
+    }
+  }
 
   async function chooseLockIn() {
     if (auth.status !== "ready" || !snapshot) return;
@@ -326,9 +441,11 @@ export function GameClient({ roomId }: { roomId: string | null }) {
           <Radio size={16} />{" "}
           {snapshot.room.phase === "round_summary"
             ? "ROUND SUMMARY"
-            : isMyTurn
-              ? "YOUR TURN"
-              : `${activePlayer?.displayName ?? "Player"} IS CHOOSING`}
+            : snapshot.room.phase === "action_choice"
+              ? `ACTION CHOICE · ${snapshot.actionState.respondedCount}/${snapshot.actionState.participantCount} READY`
+              : isMyTurn
+                ? "YOUR TURN"
+                : `${activePlayer?.displayName ?? "Player"} IS CHOOSING`}
         </div>
         <div className={remaining <= 5 ? "game-timer is-urgent" : "game-timer"}>
           <Clock3 size={17} /> {remaining}s
@@ -337,6 +454,15 @@ export function GameClient({ roomId }: { roomId: string | null }) {
 
       {snapshot.room.phase === "round_summary" && latestSummary ? (
         <RoundSummaryPanel snapshot={snapshot} remaining={remaining} />
+      ) : snapshot.room.phase === "action_choice" ? (
+        <ActionChoicePanel
+          snapshot={snapshot}
+          pending={pending}
+          targetId={targetId}
+          onTargetChange={setTargetId}
+          onChoice={chooseAction}
+          onTarget={chooseActionTarget}
+        />
       ) : (
         <section className="game-grid">
           <div className="game-main-column">
@@ -475,6 +601,166 @@ export function GameClient({ roomId }: { roomId: string | null }) {
         </div>
       )}
     </main>
+  );
+}
+
+function ActionChoicePanel({
+  snapshot,
+  pending,
+  targetId,
+  onTargetChange,
+  onChoice,
+  onTarget,
+}: {
+  snapshot: MatchSnapshot;
+  pending: string | null;
+  targetId: string;
+  onTargetChange: (value: string) => void;
+  onChoice: (choice: "draw" | "skip") => Promise<void>;
+  onTarget: () => Promise<void>;
+}) {
+  const action = snapshot.actionState;
+  const draw = action.draw;
+  const targets = snapshot.players.filter((player) =>
+    draw?.eligibleTargetIds.includes(player.id),
+  );
+  const result =
+    draw?.status === "resolved"
+      ? Object.entries(draw.privateResult).map(
+          ([key, value]) =>
+            `${key.replaceAll(/([A-Z])/g, " $1").toLowerCase()}: ${String(value)}`,
+        )
+      : [];
+
+  return (
+    <section className="game-grid action-game-grid">
+      <div className="game-main-column">
+        <div
+          className={`action-card-stage action-${draw?.category ?? "hidden"}`}
+        >
+          {draw ? (
+            <div
+              className="action-card-reveal"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="action-category">
+                {draw.category} mystery card
+              </span>
+              <Sparkles size={35} aria-hidden="true" />
+              <h1>{draw.displayName}</h1>
+              <p>{draw.description}</p>
+              {draw.status === "awaiting_target" ? (
+                <div className="action-target-control">
+                  <label htmlFor="action-target">
+                    Choose an eligible player
+                  </label>
+                  <select
+                    id="action-target"
+                    value={targetId}
+                    onChange={(event) => onTargetChange(event.target.value)}
+                    disabled={pending !== null}
+                  >
+                    <option value="">Choose player</option>
+                    {targets.map((player) => (
+                      <option key={player.id} value={player.id}>
+                        {player.displayName}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    disabled={!targetId || pending !== null}
+                    onClick={() => void onTarget()}
+                  >
+                    {pending === "action-target"
+                      ? "Resolving…"
+                      : "Resolve card"}
+                  </button>
+                </div>
+              ) : (
+                <div className="action-result">
+                  <strong>Resolved immediately</strong>
+                  <p>
+                    {result.length
+                      ? result.join(" · ")
+                      : "The server applied this card securely."}
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : action.choice ? (
+            <div className="waiting-card">
+              <RefreshCcw className="state-spinner" aria-hidden="true" />
+              <div>
+                <p className="eyebrow">CHOICE LOCKED</p>
+                <h1>
+                  {action.choice.automatic
+                    ? "Automatically skipped"
+                    : "Waiting for the room"}
+                </h1>
+                <p>
+                  Your choice cannot be changed. Point decisions begin after
+                  everyone responds.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="action-choice-copy">
+              <Sparkles size={42} aria-hidden="true" />
+              <p className="eyebrow">OPTIONAL MYSTERY ACTION</p>
+              <h1>Draw now—or keep your round predictable.</h1>
+              <p>
+                A draw is selected and applied immediately by the server. It
+                cannot be previewed, rejected, saved, or exchanged.
+              </p>
+              <div className="action-choice-buttons">
+                <button
+                  className="button button-lime"
+                  type="button"
+                  disabled={pending !== null || action.drawsRemaining === 0}
+                  onClick={() => void onChoice("draw")}
+                >
+                  <Sparkles size={18} />{" "}
+                  {pending === "action-draw" ? "Drawing…" : "Draw Mystery Card"}
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={pending !== null}
+                  onClick={() => void onChoice("skip")}
+                >
+                  {pending === "action-skip" ? "Skipping…" : "Skip this round"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <aside className="game-sidebar">
+        <div className="action-allowance-card">
+          <span>Mystery draws remaining</span>
+          <strong>{action.drawsRemaining}</strong>
+          <small>
+            {action.respondedCount} of {action.participantCount} players
+            responded
+          </small>
+        </div>
+        {action.shieldActive && (
+          <div className="shield-status" role="status">
+            <ShieldCheck aria-hidden="true" />
+            <div>
+              <strong>Shield active</strong>
+              <span>
+                Blocks the next eligible targeted negative action this round.
+              </span>
+            </div>
+          </div>
+        )}
+        <Leaderboard snapshot={snapshot} />
+      </aside>
+    </section>
   );
 }
 

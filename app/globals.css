@@ -2053,6 +2053,134 @@ fieldset {
     transform: translateY(10px) scale(0.98);
   }
 }
+.action-card-stage {
+  min-height: 470px;
+  padding: clamp(26px, 5vw, 52px);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(145, 120, 255, 0.32);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(145, 120, 255, 0.2), transparent 45%),
+    linear-gradient(155deg, #181b38, #0e1024);
+}
+.action-card-reveal,
+.action-choice-copy {
+  width: min(650px, 100%);
+  text-align: center;
+  animation: challenge-pop 420ms ease-out;
+}
+.action-card-reveal > svg,
+.action-choice-copy > svg {
+  color: var(--purple-bright);
+}
+.action-card-reveal h1,
+.action-choice-copy h1 {
+  margin: 10px 0;
+  font-family: var(--font-display);
+  font-size: clamp(38px, 6vw, 66px);
+  line-height: 1;
+}
+.action-card-reveal > p,
+.action-choice-copy > p {
+  color: var(--muted);
+}
+.action-category {
+  display: inline-block;
+  margin-bottom: 18px;
+  padding: 7px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.action-positive .action-category {
+  color: var(--lime);
+}
+.action-negative .action-category {
+  color: var(--coral);
+}
+.action-unpredictable .action-category {
+  color: var(--gold);
+}
+.action-choice-buttons {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: 1.3fr 0.7fr;
+  gap: 12px;
+}
+.action-target-control {
+  margin: 28px auto 0;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  text-align: left;
+}
+.action-target-control label {
+  grid-column: 1 / -1;
+  font-weight: 800;
+}
+.action-target-control select {
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: white;
+}
+.action-result {
+  margin-top: 25px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.action-result p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.action-allowance-card,
+.shield-status {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(16, 18, 38, 0.92);
+}
+.action-allowance-card {
+  display: grid;
+}
+.action-allowance-card span,
+.action-allowance-card small {
+  color: var(--muted);
+}
+.action-allowance-card strong {
+  font-family: var(--font-display);
+  font-size: 54px;
+  color: var(--lime);
+}
+.shield-status {
+  display: flex;
+  gap: 12px;
+  color: var(--blue);
+}
+.shield-status div {
+  display: grid;
+  gap: 4px;
+}
+.shield-status span {
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .action-card-reveal,
+  .action-choice-copy {
+    animation: none;
+  }
+}
 .game-sidebar {
   display: grid;
   align-content: start;
@@ -2300,6 +2428,13 @@ fieldset {
   }
   .challenge-control {
     grid-template-columns: 1fr;
+  }
+  .action-choice-buttons,
+  .action-target-control {
+    grid-template-columns: 1fr;
+  }
+  .action-target-control label {
+    grid-column: auto;
   }
   .challenge-control label {
     grid-column: auto;

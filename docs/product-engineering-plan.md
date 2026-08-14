@@ -4,6 +4,8 @@
 
 ScoreUp will be delivered as seven independently verifiable milestones. Each milestone must pass its relevant automated tests and production build before work begins on the next one.
 
+Milestones 1–4 are implemented. Milestone 5 has not started.
+
 1. **Frontend foundation** — establish the React/TypeScript/Vite/Tailwind shell, routes, visual language, accessible forms, rules, and a representative lobby using typed mock data.
 2. **Multiplayer foundation** — add Supabase anonymous auth, normalized Postgres migrations, RLS, room RPCs, lobby presence, ready state, host controls, and secure password verification.
 3. **Core game** — implement the server-authoritative phase machine, private point-card dealing, shuffled turn order, lock-in/challenge resolution, timers, summaries, and authoritative reconnection snapshots.
@@ -51,9 +53,10 @@ stateDiagram-v2
     Lobby --> Lobby: join / ready / reconnect
     Lobby --> DealCards: host starts with 2+ players
     DealCards --> ActionChoice: private cards committed
-    ActionChoice --> ActionChoice: draw or skip
-    ActionChoice --> ResolveActions: all responded or deadline
-    ResolveActions --> PointDecision: effects committed + turn order set
+    ActionChoice --> ActionChoice: skip or immediate draw resolves
+    ActionChoice --> AwaitTarget: selected card requires owner target
+    AwaitTarget --> ActionChoice: owner target or secure timeout target resolves
+    ActionChoice --> PointDecision: all responded + effects committed + turn order set
     PointDecision --> PointDecision: lock in / challenge / timeout
     PointDecision --> MiniGameResolution: all point cards resolved
     MiniGameResolution --> MiniGameResolution: queued challenges settle
@@ -68,6 +71,8 @@ stateDiagram-v2
 ```
 
 Every transition is a database transaction invoked by a validated Edge Function/RPC. Clients render server timestamps locally and refetch an authoritative snapshot after reconnecting; Realtime notifications are hints that state changed, never the state of record.
+
+The currently implemented runtime proceeds directly from `PointDecision` to `RoundSummary`; the Mini-Game branches shown above belong to the next milestone and are not active.
 
 ## Milestone acceptance gates
 

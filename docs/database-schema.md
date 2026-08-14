@@ -1,6 +1,6 @@
 # Database design
 
-Postgres is the source of truth. Milestone 3 extends the verified lobby with normalized Core Game state. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
+Postgres is the source of truth. Milestone 4 extends the verified lobby and Core Game with normalized Action Card state. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
 
 ## Implemented in Milestone 2
 
@@ -70,13 +70,21 @@ Each actor has at most one decision per round; every command has a room-scoped i
 
 `private.point_card_deck` defines weighted values `0, 100, 250, 500, 750, 1000`; duplicates are represented by weights and selected server-side. `private.core_operation_receipts` makes summary advancement replay-safe after state has moved forward. Neither table has browser grants.
 
-### `action_draws`
+## Implemented in Milestone 4
 
-- unique `(room_id, round_number, player_id)` to enforce one draw per round
-- server-selected `card_type`
-- private `effect_payload` and redacted `public_payload`
-- globally unique `(player_id, idempotency_key)`
-- `status`, `requested_at`, `resolved_at`
+### `action_choices` and `action_draws`
+
+`action_choices` records exactly one Draw or Skip per player/round; automatic deadline skips are explicit rows and do not consume allowance. `action_draws` binds one securely selected catalog card to a Draw choice. Room-scoped unique request keys make replay safe. A draw is `selected`, `awaiting_target`, or `resolved`; targeted draws store a separate ten-second server deadline. Private and public-safe results are distinct fields, and RLS exposes a draw only to its owner.
+
+### Private catalog, shields, and card mutation audit
+
+`private.action_card_catalog` owns stable code, display metadata, category, weight, target requirement, shield classification, effect parameters, resolver identity, version, and enabled state for all 18 cards. Enabled weights total 40 positive, 30 negative, and 30 unpredictable. These are approximate selection weights, not a guarantee that any match follows those percentages.
+
+`private.action_shields` stores one current-round shield per player and records the draw that consumed it. `private.point_card_mutations` preserves old/new card values and source player IDs for modifiers, replacement, and swaps. Neither relation has browser access.
+
+### Signed score ledger extension
+
+`score_ledger` now accepts exactly one source kind: a Core Game decision or Action draw. Action entries carry signed deltas, non-negative post-change balances, reason codes, and a unique draw/player/reason index. Zero-value effects do not manufacture ledger rows.
 
 ## Planned after Milestone 3
 
@@ -106,3 +114,13 @@ A short-lived server-only bucket table keys attempts by operation, auth user, an
 - `get_match_snapshot`: recover full public state plus only the caller's unresolved private card
 
 Every state-changing Core Game command accepts an idempotency key or uses the room state as its idempotency boundary, obtains row locks, validates phase/actor/deadline, changes state, appends ledger/events, and commits atomically.
+
+## Action Card transaction boundaries
+
+- `submit_action_choice`: locks room/current round, derives the actor, records Draw or Skip once, securely selects the card, and resolves immediately unless an owner target is required
+- `submit_action_target`: owner-only, revalidates the persisted draw and eligible target under locks, then resolves once
+- `process_expired_action_phase`: any participant may convert every unanswered choice to automatic Skip after server time expires
+- `process_expired_action_target`: any participant may securely select an eligible target after the target deadline
+- `get_action_state_snapshot`: returns the public match plus only the caller's choice, draw identity/result, eligible targets, and shield state
+
+Point-decision order is generated only after every participant has responded and every targeted draw has resolved.

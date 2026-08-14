@@ -68,6 +68,19 @@ export const matchFixture = {
     actionDrawsUsed: 0,
     miniGameTokenUsed: false,
   },
+  actionState: {
+    phaseDeadline: "2026-08-13T00:00:20Z",
+    respondedCount: 2,
+    participantCount: 2,
+    drawsRemaining: 2,
+    shieldActive: false,
+    choice: {
+      choice: "skip",
+      automatic: false,
+      createdAt: "2026-08-13T00:00:01Z",
+    },
+    draw: null,
+  },
   eligibleChallengeTargetIds: ["e66ab6c6-3eb6-4df4-ad2f-c2ba69aec19b"],
   roundSummaries: [],
   recentEvents: [

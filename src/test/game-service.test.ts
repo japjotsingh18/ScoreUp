@@ -5,6 +5,10 @@ import {
   fetchMatch,
   lockIn,
   processTimeout,
+  processActionPhaseTimeout,
+  processActionTargetTimeout,
+  submitActionChoice,
+  submitActionTarget,
 } from "../lib/supabase/game";
 import { matchFixture } from "./fixtures/match";
 
@@ -67,5 +71,58 @@ describe("core game service", () => {
         "f6459f71-c29f-43d2-887c-a13f4d56a171",
       ),
     ).rejects.toMatchObject({ code: "DEADLINE_NOT_EXPIRED" });
+  });
+
+  it("submits Draw without a browser-selected card or effect", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: matchFixture, error: null });
+    await submitActionChoice(
+      clientWithRpc(rpc),
+      matchFixture.room.id,
+      "draw",
+      "f6459f71-c29f-43d2-887c-a13f4d56a171",
+    );
+    expect(rpc).toHaveBeenCalledWith("submit_action_choice", {
+      p_room_id: matchFixture.room.id,
+      p_choice: "draw",
+      p_idempotency_key: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+    });
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty("p_card_code");
+  });
+
+  it("submits only persisted draw and eligible target identifiers", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: matchFixture, error: null });
+    await submitActionTarget(
+      clientWithRpc(rpc),
+      matchFixture.room.id,
+      "f6459f71-c29f-43d2-887c-a13f4d56a171",
+      matchFixture.players[1].id,
+      "8db937ae-04cc-4d45-9b4d-746674cebc20",
+    );
+    expect(rpc).toHaveBeenCalledWith("submit_action_target", {
+      p_room_id: matchFixture.room.id,
+      p_action_draw_id: "f6459f71-c29f-43d2-887c-a13f4d56a171",
+      p_target_player_id: matchFixture.players[1].id,
+      p_idempotency_key: "8db937ae-04cc-4d45-9b4d-746674cebc20",
+    });
+  });
+
+  it("uses separate shared-phase and target deadline processors", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: matchFixture, error: null });
+    const client = clientWithRpc(rpc);
+    await processActionPhaseTimeout(
+      client,
+      matchFixture.room.id,
+      "f6459f71-c29f-43d2-887c-a13f4d56a171",
+    );
+    await processActionTargetTimeout(
+      client,
+      matchFixture.room.id,
+      "8db937ae-04cc-4d45-9b4d-746674cebc20",
+      "7f0028d2-6ec5-4e4e-b81a-6eea056e34fd",
+    );
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "process_expired_action_phase",
+      "process_expired_action_target",
+    ]);
   });
 });

@@ -3,6 +3,27 @@ set local search_path = public, extensions;
 
 select plan(42);
 
+create function pg_temp.complete_action_phase(p_room_id uuid)
+returns void
+language plpgsql
+as $$
+declare
+  v_round public.rounds%rowtype;
+begin
+  select * into strict v_round from public.rounds
+  where room_id = p_room_id and status = 'active';
+  insert into public.action_choices (
+    id, round_id, room_id, round_number, player_id, choice, idempotency_key
+  )
+  select gen_random_uuid(), v_round.id, p_room_id, v_round.round_number,
+    p.id, 'skip', gen_random_uuid()
+  from public.players p
+  where p.room_id = p_room_id and p.match_participant and p.left_at is null
+  on conflict (round_id, player_id) do nothing;
+  perform private.maybe_complete_action_phase(p_room_id, v_round.id);
+end;
+$$;
+
 insert into auth.users (id, aud, role, is_anonymous, created_at, updated_at)
 select
   ('40000000-0000-4000-8000-' || lpad(value::text, 12, '0'))::uuid,
@@ -33,6 +54,7 @@ select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-0000000
 set local role authenticated;
 select lives_ok(format('select public.start_room(%L)', current_setting('scoreup.loss_room_id')::uuid), 'loss-test match starts');
 reset role;
+select pg_temp.complete_action_phase(current_setting('scoreup.loss_room_id')::uuid);
 select set_config('scoreup.loss_actor_id', (select current_turn_player_id::text from public.rooms where id = current_setting('scoreup.loss_room_id')::uuid), true);
 select set_config('scoreup.loss_actor_user', (select auth_user_id::text from public.players where id = current_setting('scoreup.loss_actor_id')::uuid), true);
 select set_config('scoreup.loss_target_id', (select id::text from public.players where room_id = current_setting('scoreup.loss_room_id')::uuid and id <> current_setting('scoreup.loss_actor_id')::uuid), true);
@@ -74,6 +96,7 @@ select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-0000000
 set local role authenticated;
 select lives_ok(format('select public.start_room(%L)', current_setting('scoreup.tie_room_id')::uuid), 'tie-test match starts');
 reset role;
+select pg_temp.complete_action_phase(current_setting('scoreup.tie_room_id')::uuid);
 update public.rounds set round_number = 6 where room_id = current_setting('scoreup.tie_room_id')::uuid;
 update public.round_cards_private set round_number = 6, original_value = 500, current_value = 500 where room_id = current_setting('scoreup.tie_room_id')::uuid;
 update public.rooms set current_round = 6 where id = current_setting('scoreup.tie_room_id')::uuid;
@@ -124,6 +147,7 @@ select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-0000000
 set local role authenticated;
 select lives_ok(format('select public.start_room(%L)', current_setting('scoreup.odd_room_id')::uuid), 'odd-player match starts');
 reset role;
+select pg_temp.complete_action_phase(current_setting('scoreup.odd_room_id')::uuid);
 select is((select count(*) from public.players where room_id = current_setting('scoreup.odd_room_id')::uuid and match_participant), 3::bigint, 'odd player count is preserved in the frozen roster');
 select set_config('scoreup.odd_actor_id', (select current_turn_player_id::text from public.rooms where id = current_setting('scoreup.odd_room_id')::uuid), true);
 select set_config('scoreup.odd_actor_user', (select auth_user_id::text from public.players where id = current_setting('scoreup.odd_actor_id')::uuid), true);
