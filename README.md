@@ -4,13 +4,13 @@
 
 ScoreUp is a mobile-first, real-time multiplayer party game for 2–10 players. Hidden point cards create tension, action cards disrupt the leaderboard, and each player holds one skill-based Mini-Game Challenge that can turn a match at exactly the right moment.
 
-> Project status: **Milestone 2 is complete in source.** The public experience now connects to Supabase anonymous authentication, atomic room commands, row-level security, private room-scoped Realtime invalidation, and an authoritative live lobby. Gameplay initialization remains intentionally reserved for Milestone 3.
+> Project status: **Milestone 3 Core Game is implemented.** ScoreUp now runs an authoritative point-card match from atomic initialization through final-round completion, while Action Cards and Mini-Game Challenges remain reserved for later milestones.
 
 ## Screenshots
 
 Screenshots and hosted preview links will be added during the final deployment milestone.
 
-## Milestone 2 features
+## Milestone 3 features
 
 - Restored-or-created anonymous Supabase browser sessions with explicit unconfigured, loading, failure, and retry states
 - Atomic, idempotent room creation and serialized room joining through authenticated Postgres RPCs
@@ -20,6 +20,11 @@ Screenshots and hosted preview links will be added during the final deployment m
 - Heartbeat-based connection recovery and activity-triggered host transfer after a 60-second grace period
 - RLS isolation, column-level grants, authenticated command-only writes, and multi-identity pgTAP coverage
 - Shared typed validation contracts plus Vitest and React Testing Library coverage for auth, services, validation, Realtime cleanup, and forms
+- Atomic roster freeze, match initialization, secure server-side card dealing, and per-round randomized decision order
+- Transactional, idempotent Lock In, point-card challenge, timeout, and summary-advance commands
+- Private-card RLS isolation, actor-specific reconnection snapshots, append-only score awards, and redacted public events
+- Server-timed turns and summaries with activity-triggered overdue processing
+- Responsive core-game UI with private card, countdown, challenge targeting, leaderboard, public feed, round summaries, and tied-first completion
 
 ## Game rules
 
@@ -71,7 +76,7 @@ Each transition will be a versioned, idempotent server command with phase, actor
 
 ## Database design
 
-Milestone 2 implements `rooms`, `players`, and a private join-attempt limiter. Gameplay relations for rounds, cards, decisions, mini-games, and the score ledger remain planned for their owning milestones. Private data is excluded from grants, snapshots, and Realtime payloads. See [docs/database-schema.md](docs/database-schema.md) for the implemented constraints and transaction boundaries.
+Milestone 3 adds normalized rounds, private cards, decisions, a score ledger, and redacted game events. Action-card and Mini-Game relations remain planned for their owning milestones. See [docs/database-schema.md](docs/database-schema.md) and [the Core Game decisions](docs/milestone-3.md).
 
 ## Security approach
 
@@ -87,7 +92,7 @@ Milestone 2 implements `rooms`, `players`, and a private join-attempt limiter. G
 
 ## Realtime strategy
 
-Realtime currently carries only a private `{ changed: true }` lobby hint on `room:<uuid>:lobby`. It never carries password material or auth identifiers. Authorized clients refetch `get_lobby_snapshot`, so dropped or coalesced messages cannot make an event stream authoritative. Later milestones may extend the same redacted invalidation pattern to gameplay state.
+Realtime carries only private `{ changed: true }` invalidation hints on room-scoped lobby and game channels. It never carries private card values, password material, or auth identifiers. Authorized clients refetch actor-specific snapshots, so dropped or coalesced messages cannot make an event stream authoritative.
 
 ## Local setup
 
@@ -118,7 +123,7 @@ npm run format:check
 npm run build
 ```
 
-The TypeScript suite covers configuration, anonymous-session restoration/creation, shared contracts, RPC error mapping, response redaction, Realtime cleanup, and create/join forms. pgTAP exercises four identities against real RLS/RPC boundaries, including create idempotency, join/reconnect, password rejection, capacity, duplicate names, unauthorized reads/writes, ready/start rules, host removal, room-code uniqueness, and host transfer.
+The TypeScript suite covers configuration, session restoration, strict lobby/game contracts, RPC error mapping, redacted commands, Realtime cleanup, and forms. pgTAP exercises multiple identities against real RLS/RPC boundaries and deterministic game fixtures for initialization, card isolation, scoring, challenge outcomes, timeouts, round progression, final ties, and reconnection.
 
 ## Deployment
 

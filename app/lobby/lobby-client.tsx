@@ -18,6 +18,7 @@ import {
   type LobbySnapshot,
 } from "../../src/game/lobby/contracts";
 import { useAnonymousSession } from "../../src/hooks/use-anonymous-session";
+import { startMatch } from "../../src/lib/supabase/game";
 import {
   fetchLobby,
   heartbeatRoom,
@@ -26,7 +27,6 @@ import {
   removePlayer,
   RoomOperationError,
   setReadyState,
-  startRoom,
 } from "../../src/lib/supabase/rooms";
 import {
   subscribeToLobby,
@@ -57,6 +57,13 @@ export function LobbyClient({ roomId }: { roomId: string | null }) {
   const requestSequence = useRef(0);
 
   const applySnapshot = useCallback((next: LobbySnapshot) => {
+    if (
+      next.room.status === "in_progress" ||
+      next.room.status === "completed"
+    ) {
+      window.location.assign(`/game?room=${encodeURIComponent(next.room.id)}`);
+      return;
+    }
     if (
       previousHost.current &&
       previousHost.current !== next.room.hostPlayerId
@@ -172,10 +179,8 @@ export function LobbyClient({ roomId }: { roomId: string | null }) {
     if (auth.status !== "ready" || !snapshot) return;
     setPending("start");
     try {
-      applySnapshot(await startRoom(auth.client, snapshot.room.id));
-      setNotice(
-        "The room is locked and ready for Milestone 3 gameplay initialization.",
-      );
+      const match = await startMatch(auth.client, snapshot.room.id);
+      window.location.assign(`/game?room=${encodeURIComponent(match.room.id)}`);
     } catch (cause) {
       setError(friendlyError(cause));
     } finally {

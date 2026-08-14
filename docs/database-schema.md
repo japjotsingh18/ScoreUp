@@ -1,6 +1,6 @@
 # Database design
 
-Postgres is the source of truth. This document separates the schema implemented by Milestone 2 from gameplay tables reserved for later milestones. All current room mutations execute inside `security definer` functions with an empty `search_path` and explicit authorization checks.
+Postgres is the source of truth. Milestone 3 extends the verified lobby with normalized Core Game state. All mutations execute inside `security definer` functions with an empty `search_path`, explicit authorization, and transactional row locking.
 
 ## Implemented in Milestone 2
 
@@ -43,11 +43,15 @@ A server-only 60-second bucket records attempts per `(auth_user_id, room_code)`.
 
 Each lobby mutation triggers a private room-scoped Realtime invalidation. The payload contains no row data; clients retrieve an RLS-authorized snapshot.
 
-## Planned gameplay entities (Milestones 3+)
+## Implemented in Milestone 3
 
-### `rounds` and `round_turns`
+### Match state on `rooms` and `players`
 
-`rounds` holds `(room_id, round_number)`, phase timestamps, status, and a secure shuffle commitment. `round_turns` stores the randomized ordinal and resolution state with unique `(round_id, player_id)` and `(round_id, turn_position)` constraints.
+Rooms now own `current_round`, `current_phase`, the current turn player, the server phase deadline, a monotonic match version, completion time, and the preliminary tiebreaker-required flag. Players own non-negative score, frozen-roster participation, future Action-draw allowance/usage, the unused future Mini-Game token flag, and Core Game statistics. Browser roles receive no write grants.
+
+### `rounds`
+
+`rounds` holds unique `(room_id, round_number)`, phase/status, randomized UUID decision order, current turn index/player, authoritative phase/turn deadlines, and lifecycle timestamps. The server regenerates the order from cryptographic random bytes each round and avoids an identical consecutive order when there is more than one player.
 
 ### `round_cards_private`
 
@@ -56,7 +60,15 @@ Each lobby mutation triggers a private room-scoped Realtime invalidation. The pa
 - `status` (`hidden`, `resolved`, `revealed`)
 - effect/version fields and timestamps
 
-Only the owner can select their hidden row. Server functions may read all rows. A separate public `round_card_reveals` table receives values only when a round reaches summary.
+Only the owner can select an unresolved card row. Server functions may read all rows. Once a round is completed, participants may read its revealed card rows and receive the same allowlisted data through round summaries.
+
+### `point_decisions`, `score_ledger`, and `game_events`
+
+Each actor has at most one decision per round; every command has a room-scoped idempotency UUID. The append-only ledger binds each non-negative award to one decision/player/source. Game events use a monotonic sequence and public JSON payloads. Card values appear only in resolved challenge events or completed summaries, never before resolution.
+
+### Private configuration and receipts
+
+`private.point_card_deck` defines weighted values `0, 100, 250, 500, 750, 1000`; duplicates are represented by weights and selected server-side. `private.core_operation_receipts` makes summary advancement replay-safe after state has moved forward. Neither table has browser grants.
 
 ### `action_draws`
 
@@ -66,14 +78,7 @@ Only the owner can select their hidden row. Server functions may read all rows. 
 - globally unique `(player_id, idempotency_key)`
 - `status`, `requested_at`, `resolved_at`
 
-### `point_decisions`
-
-- unique `(room_id, round_number, player_id)`
-- `decision_type` (`lock_in`, `challenge`, `auto_lock_in`)
-- optional `target_player_id`
-- redacted result JSON and resolution timestamp
-
-The challenge transaction locks both card and turn rows, verifies both players are unresolved, inserts both resolution records, applies awards once, and advances the turn.
+## Planned after Milestone 3
 
 ### `mini_game_challenges` and private specifications
 
@@ -87,25 +92,17 @@ The public challenge row stores participants, stake type, locked stake per playe
 - validation status/reason
 - unique replay/idempotency key
 
-### `score_ledger`
-
-An append-only ledger records every score delta with `player_id`, room/round, operation type, source record, delta, balance after, and idempotency key. Unique source/idempotency constraints make audits and duplicate prevention explicit. Clients read player totals, not ledger mutation APIs.
-
-### `game_events`
-
-Contains public, redacted events only: room/round, monotonically increasing sequence, type, payload, actor, and timestamp. Unique `(room_id, sequence)` supports ordered catch-up. No private card values, seeds, auth identifiers, password material, or tokens may appear here.
-
 ### `rate_limits` and cleanup
 
 A short-lived server-only bucket table keys attempts by operation, auth user, and room. Scheduled cleanup removes expired rate buckets and abandoned unstarted rooms; completed match history follows a documented retention window. Auth-user deletion cascades only after room-history requirements are considered.
 
-## Planned gameplay transaction boundaries
+## Core Game transaction boundaries
 
-- `create_room`, `join_room`, and `start_match`
-- `begin_round` (deal cards and shuffle turns)
-- `draw_action_card` and targeted-effect completion
-- `submit_point_decision` / timeout lock-in
-- `queue_mini_game`, `start_next_challenge`, and `settle_mini_game`
-- `advance_phase`, `complete_match`, and `reset_rematch`
+- `start_room`: freeze connected roster, zero scores/stats, calculate future allowances, create/deal round one, and return an actor-safe snapshot
+- `lock_in_point_card`: validate actor/phase/turn/deadline, resolve and award exactly once, then advance or complete
+- `challenge_point_card`: lock actor/target cards, resolve win/loss/tie, award both ledger rows, reveal only the resolved pair, then advance
+- `process_expired_turn`: participant-triggered, server-time-validated automatic Lock In
+- `advance_round_summary`: replay-safe creation/deal/shuffle of the next round after the summary deadline
+- `get_match_snapshot`: recover full public state plus only the caller's unresolved private card
 
-Every command accepts an idempotency key, obtains row locks in deterministic order, validates room version/phase/actor, changes state, appends a ledger/event record, and commits atomically.
+Every state-changing Core Game command accepts an idempotency key or uses the room state as its idempotency boundary, obtains row locks, validates phase/actor/deadline, changes state, appends ledger/events, and commits atomically.

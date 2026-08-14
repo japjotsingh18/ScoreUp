@@ -13,7 +13,8 @@ Narrowly scoped Postgres RPCs form the Milestone 2 command boundary. The databas
 - Players can update no authoritative gameplay columns directly. Ready/heartbeat/leave actions go through validated commands.
 - Password material and rate-limit buckets have no direct client select policy. Room/player grants omit `password_hash`, `created_by_user_id`, and `auth_user_id`.
 - Direct inserts, updates, and deletes on rooms and players are denied to browser roles; authenticated functions perform the allowed mutations after actor checks.
-- Hidden-card, mini-game, and score-ledger policies are planned with their owning gameplay migrations and are not falsely represented as deployed in Milestone 2.
+- Match participants can read public rounds/events/decisions. An unresolved private card is visible only to its authenticated owner; completed rounds reveal cards to participants. The score ledger has no browser grant.
+- Direct browser inserts, updates, and deletes on rounds, cards, decisions, scores, deadlines, phases, and events are denied.
 
 ## Command protections
 
@@ -22,8 +23,14 @@ Narrowly scoped Postgres RPCs form the Milestone 2 command boundary. The databas
 3. Verify room, phase, round, turn, deadline, target eligibility, and resource version.
 4. Enforce join-attempt rate limits and creation idempotency; later gameplay commands will add their own replay keys.
 5. Lock affected rows in stable UUID order to prevent double spending and deadlocks.
-6. Use `pgcrypto` secure random bytes for room codes; later milestones own card/deck/target randomness.
-7. Return only an allowlisted lobby snapshot and publish a payload-free invalidation hint.
+6. Use `pgcrypto` secure random bytes for room codes, card selection, and decision order. Test fixtures may set generated cards only while running as the database owner inside rolled-back transactions.
+7. Return allowlisted lobby/match snapshots and publish payload-free invalidation hints. A match snapshot includes another player's card only after the round is completed.
+
+## Core Game command boundary
+
+`start_room`, `lock_in_point_card`, `challenge_point_card`, `process_expired_turn`, and `advance_round_summary` are fixed-search-path definers with minimal authenticated grants. They derive the actor from `auth.uid()`, lock authoritative rows, reject stale phases/turns/deadlines/targets, and use unique decisions, ledger sources, or private receipts to stop double awards and replay.
+
+Public challenge events reveal only the two cards after both are resolved. General turn, timeout, score, and round events contain no card values. Realtime sends only `{ changed: true }`; clients then fetch a fresh actor-specific snapshot.
 
 ## Identity, reconnection, and rooms
 
