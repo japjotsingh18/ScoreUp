@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(48);
+select plan(49);
 
 create function pg_temp.complete_action_phase(p_room_id uuid)
 returns void
@@ -180,6 +180,10 @@ select lives_ok(
 select lives_ok(
   format('select public.advance_round_summary(%L, %L)', current_setting('scoreup.core_room_id')::uuid, '32000000-0000-4000-8000-000000000005'::uuid),
   'replaying a round advance safely returns the current round'
+);
+select lives_ok(
+  format('select public.advance_round_summary(%L, %L)', current_setting('scoreup.core_room_id')::uuid, '32000000-0000-4000-8000-000000000015'::uuid),
+  'a competing client that loses the summary race receives the current round safely'
 );
 reset role;
 select pg_temp.complete_action_phase(current_setting('scoreup.core_room_id')::uuid);
