@@ -105,6 +105,19 @@ jobs:
       - name: Rebuild migrations from zero
         run: npm run db:reset
 
+      - name: Export local public Supabase configuration
+        shell: bash
+        run: |
+          status="$(npx supabase status --output json)"
+          api_url="$(jq -r '.API_URL' <<< "$status")"
+          publishable_key="$(jq -r '.PUBLISHABLE_KEY' <<< "$status")"
+          test -n "$api_url"
+          test -n "$publishable_key"
+          {
+            echo "VITE_SUPABASE_URL=$api_url"
+            echo "VITE_SUPABASE_PUBLISHABLE_KEY=$publishable_key"
+          } >> "$GITHUB_ENV"
+
       - name: Install Chromium and system dependencies
         run: npx playwright install --with-deps chromium
 
