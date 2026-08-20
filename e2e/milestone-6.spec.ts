@@ -29,14 +29,16 @@ async function enterPointDecisions(clients: MatchClients) {
     clients.guest.getByText("YOUR PRIVATE POINT CARD"),
   ).toBeVisible();
   provisionVisiblePointCards(clients.roomId);
-  await expect(clients.host.locator(".private-card-panel h1")).toHaveText(
+  await expect(clients.host.locator(".point-card-value strong")).toHaveText(
     "100",
   );
-  await expect(clients.guest.locator(".private-card-panel h1")).toHaveText(
+  await expect(clients.guest.locator(".point-card-value strong")).toHaveText(
     "1,000",
   );
-  await expect(clients.host.locator(".private-card-panel h1")).toHaveCount(1);
-  await expect(clients.guest.locator(".private-card-panel h1")).toHaveCount(1);
+  await expect(clients.host.locator(".point-card-value strong")).toHaveCount(1);
+  await expect(clients.guest.locator(".point-card-value strong")).toHaveCount(
+    1,
+  );
 }
 
 async function activeTurn(clients: MatchClients) {
