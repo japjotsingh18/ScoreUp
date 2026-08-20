@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient } from "../../app/game/game-client";
@@ -69,6 +69,55 @@ function pointSnapshot() {
     players: [
       { ...matchFixture.players[0], score: 2_000 },
       { ...matchFixture.players[1], score: 1_225 },
+    ],
+  };
+}
+
+function roundSummarySnapshot() {
+  const base = pointSnapshot();
+  return {
+    ...base,
+    room: {
+      ...base.room,
+      phase: "round_summary",
+      currentTurnPlayerId: null,
+      phaseDeadline: "2099-08-13T00:00:20Z",
+    },
+    round: {
+      ...base.round,
+      phase: "round_summary",
+      status: "completed",
+      currentTurnIndex: null,
+      currentTurnPlayerId: null,
+      turnDeadline: null,
+      completedAt: "2026-08-13T00:00:18Z",
+    },
+    players: [
+      { ...base.players[0], score: 2_000, resolved: true },
+      { ...base.players[1], score: 2_225, rank: 1, resolved: true },
+    ],
+    roundSummaries: [
+      {
+        roundNumber: 1,
+        completedAt: "2026-08-13T00:00:18Z",
+        cards: [
+          {
+            playerId: base.players[0].id,
+            originalValue: 750,
+            currentValue: 750,
+            resolutionType: "challenge_loss",
+            pointsAwarded: 0,
+          },
+          {
+            playerId: base.players[1].id,
+            originalValue: 500,
+            currentValue: 500,
+            resolutionType: "challenge_win",
+            pointsAwarded: 1_250,
+          },
+        ],
+        decisions: [],
+      },
     ],
   };
 }
@@ -355,6 +404,30 @@ describe("GameClient action phase", () => {
         screen.getByRole("heading", { name: /automatically skipped/i }),
       ).toBeVisible(),
     );
+  });
+});
+
+describe("GameClient round results", () => {
+  beforeEach(() => testState.rpc.mockReset());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("names the round leader and separates card value, earned points, and new total", async () => {
+    const summary = roundSummarySnapshot();
+    testState.rpc.mockResolvedValue({ data: summary, error: null });
+    render(<GameClient roomId={matchFixture.room.id} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "JORDAN TAKES THE ROUND." }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("status", { name: "Round result" }),
+    ).toHaveTextContent("Jordan");
+    expect(
+      screen.getByRole("status", { name: "Round result" }),
+    ).toHaveTextContent("+1,250");
+    const winningCard = screen.getByText("Challenge winner").closest("article");
+    expect(winningCard).not.toBeNull();
+    expect(within(winningCard!).getByText("2,225")).toBeVisible();
   });
 });
 

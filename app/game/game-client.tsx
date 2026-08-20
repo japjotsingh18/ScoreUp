@@ -761,13 +761,27 @@ export function GameClient({ roomId }: { roomId: string | null }) {
         <section className="game-grid">
           <div className="game-main-column">
             <div className="private-card-panel">
-              <div>
+              <div className="point-card-wrap">
                 <p className="eyebrow">YOUR PRIVATE POINT CARD</p>
-                <h1>
-                  {snapshot.privatePlayer.card?.currentValue.toLocaleString() ??
-                    "—"}
-                </h1>
-                <span>POINTS</span>
+                <div
+                  className="point-card"
+                  aria-label={`${snapshot.privatePlayer.card?.currentValue.toLocaleString() ?? "Unknown"} point card`}
+                >
+                  <span className="point-card-corner point-card-corner-top">
+                    SU
+                  </span>
+                  <div className="point-card-value">
+                    <small>POINT CARD</small>
+                    <strong>
+                      {snapshot.privatePlayer.card?.currentValue.toLocaleString() ??
+                        "—"}
+                    </strong>
+                    <span>POINTS</span>
+                  </div>
+                  <span className="point-card-corner point-card-corner-bottom">
+                    SU
+                  </span>
+                </div>
               </div>
               <div
                 className={self.resolved ? "card-state resolved" : "card-state"}
@@ -806,10 +820,22 @@ export function GameClient({ roomId }: { roomId: string | null }) {
                     <button
                       className="button button-lime"
                       type="button"
+                      aria-label={`Lock In — bank this card for ${snapshot.privatePlayer.card?.currentValue.toLocaleString() ?? 0} points`}
                       disabled={pending !== null}
                       onClick={() => void chooseLockIn()}
                     >
-                      {pending === "lock" ? "Locking…" : "Lock In"}
+                      {pending === "lock" ? (
+                        "Locking…"
+                      ) : (
+                        <span className="bank-card-label">
+                          <small>BANK THIS CARD</small>
+                          <strong>
+                            +
+                            {snapshot.privatePlayer.card?.currentValue.toLocaleString() ??
+                              0}
+                          </strong>
+                        </span>
+                      )}
                     </button>
                     <div className="challenge-control">
                       <label htmlFor="challenge-target">
@@ -1853,28 +1879,98 @@ function RoundSummaryPanel({
   remaining: number;
 }) {
   const summary = snapshot.roundSummaries.at(-1)!;
+  const highestAward = Math.max(
+    0,
+    ...summary.cards.map((card) => card.pointsAwarded),
+  );
+  const leaders = summary.cards.filter(
+    (card) => card.pointsAwarded === highestAward,
+  );
+  const leaderNames = leaders
+    .map(
+      (card) =>
+        snapshot.players.find((player) => player.id === card.playerId)
+          ?.displayName,
+    )
+    .filter(Boolean);
+  const headline =
+    highestAward === 0
+      ? "NO POINTS THIS ROUND."
+      : leaders.length === 1
+        ? `${leaderNames[0]?.toUpperCase()} TAKES THE ROUND.`
+        : "THE ROUND ENDS IN A TIE.";
+  const resultCopy =
+    highestAward === 0
+      ? "Every revealed card finished with zero awarded points."
+      : `${leaderNames.join(" & ")} earned ${highestAward.toLocaleString()} point${highestAward === 1 ? "" : "s"}, the highest award this round.`;
   return (
     <section className="round-summary-panel">
       <div className="summary-heading">
         <p className="eyebrow">ROUND {summary.roundNumber} COMPLETE</p>
-        <h1>CARDS ON THE TABLE.</h1>
-        <p>Next round begins in {remaining} seconds.</p>
+        <h1>{headline}</h1>
+        <p>{resultCopy}</p>
+      </div>
+      <div
+        className="summary-winner-banner"
+        role="status"
+        aria-label="Round result"
+      >
+        <Trophy aria-hidden="true" />
+        <div>
+          <span>{leaders.length === 1 ? "ROUND LEADER" : "ROUND LEADERS"}</span>
+          <strong>{leaderNames.join(" · ") || "No winner"}</strong>
+        </div>
+        <b>+{highestAward.toLocaleString()}</b>
       </div>
       <div className="summary-card-grid">
         {summary.cards.map((card) => {
           const player = snapshot.players.find(
             (item) => item.id === card.playerId,
           );
+          const isLeader =
+            highestAward > 0 && card.pointsAwarded === highestAward;
+          const resolutionLabel = {
+            lock_in: "Banked safely",
+            challenge_win: "Challenge winner",
+            challenge_loss: "Challenge lost",
+            challenge_tie: "Challenge tied",
+            auto_lock_in: "Auto-banked",
+            timeout: "Timed out · auto-banked",
+          }[card.resolutionType];
           return (
-            <article key={card.playerId}>
-              <span>{player?.displayName}</span>
-              <strong>{card.currentValue.toLocaleString()}</strong>
-              <small>+{card.pointsAwarded.toLocaleString()} awarded</small>
-              <em>{card.resolutionType.replaceAll("_", " ")}</em>
+            <article
+              key={card.playerId}
+              className={isLeader ? "is-round-leader" : undefined}
+            >
+              <header>
+                <span>{player?.displayName}</span>
+                {player?.isSelf && <small>YOU</small>}
+              </header>
+              <div
+                className="summary-playing-card"
+                aria-label={`${card.currentValue.toLocaleString()} point card`}
+              >
+                <span>SU</span>
+                <strong>{card.currentValue.toLocaleString()}</strong>
+                <small>POINT CARD</small>
+              </div>
+              <div className="summary-points-earned">
+                <span>Earned this round</span>
+                <strong>+{card.pointsAwarded.toLocaleString()}</strong>
+              </div>
+              <div className="summary-card-footer">
+                <em>{resolutionLabel}</em>
+                <span>
+                  New total <b>{player?.score.toLocaleString() ?? "—"}</b>
+                </span>
+              </div>
             </article>
           );
         })}
       </div>
+      <p className="summary-next-round" role="timer">
+        Next round begins in <strong>{remaining}</strong> seconds
+      </p>
       <Leaderboard snapshot={snapshot} />
     </section>
   );

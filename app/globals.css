@@ -2078,6 +2078,90 @@ html[data-motion="reduce"] *::after {
     linear-gradient(155deg, #181b38, #0e1024);
   box-shadow: 0 24px 65px rgba(0, 0, 0, 0.25);
 }
+.point-card-wrap {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+.point-card-wrap > .eyebrow {
+  margin: 0;
+}
+.point-card {
+  width: clamp(190px, 24vw, 245px);
+  aspect-ratio: 0.72;
+  padding: 20px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(216, 255, 67, 0.7);
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      circle at 50% 35%,
+      rgba(216, 255, 67, 0.15),
+      transparent 42%
+    ),
+    linear-gradient(145deg, #202443, #101326 72%);
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 5px rgba(255, 255, 255, 0.035),
+    0 0 42px rgba(216, 255, 67, 0.08);
+  transform: rotate(-1.5deg);
+  animation: point-card-deal 420ms ease-out;
+}
+.point-card::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(216, 255, 67, 0.19);
+  border-radius: 16px;
+  pointer-events: none;
+}
+.point-card-corner {
+  position: absolute;
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -1px;
+}
+.point-card-corner-top {
+  top: 20px;
+  left: 21px;
+}
+.point-card-corner-bottom {
+  right: 21px;
+  bottom: 20px;
+  transform: rotate(180deg);
+}
+.point-card-value {
+  display: grid;
+  place-items: center;
+}
+.point-card-value small,
+.point-card-value span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.point-card-value strong {
+  margin: 4px 0 0;
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: clamp(62px, 8vw, 92px);
+  line-height: 0.9;
+  letter-spacing: -4px;
+  text-shadow: 0 0 28px rgba(216, 255, 67, 0.18);
+}
+@keyframes point-card-deal {
+  from {
+    opacity: 0;
+    transform: translateY(22px) rotate(4deg) scale(0.94);
+  }
+}
 .private-card-panel::before,
 .private-card-panel::after {
   content: "";
@@ -2095,21 +2179,6 @@ html[data-motion="reduce"] *::after {
 .private-card-panel::after {
   right: -95px;
   bottom: -90px;
-}
-.private-card-panel h1 {
-  margin: 4px 0 -4px;
-  font-family: var(--font-display);
-  font-size: clamp(86px, 12vw, 148px);
-  line-height: 0.95;
-  letter-spacing: -5px;
-  color: var(--lime);
-  text-shadow: 0 0 38px rgba(216, 255, 67, 0.12);
-}
-.private-card-panel > div > span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 3px;
 }
 .card-state {
   position: absolute;
@@ -2157,6 +2226,20 @@ html[data-motion="reduce"] *::after {
   min-height: 112px;
   font-family: var(--font-display);
   font-size: 27px;
+}
+.bank-card-label {
+  display: grid;
+  gap: 2px;
+}
+.bank-card-label small {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+}
+.bank-card-label strong {
+  font-family: var(--font-display);
+  font-size: 32px;
+  line-height: 1;
 }
 .challenge-control {
   padding: 15px;
@@ -2754,6 +2837,50 @@ html[data-motion="reduce"] *::after {
 .game-complete-card > p {
   color: var(--muted);
 }
+.summary-heading > p:last-child {
+  max-width: 620px;
+  margin-inline: auto;
+  font-size: 16px;
+}
+.summary-winner-banner {
+  max-width: 760px;
+  min-height: 88px;
+  margin: 28px auto 0;
+  padding: 16px 22px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 15px;
+  border: 1px solid rgba(216, 255, 67, 0.34);
+  border-radius: 18px;
+  background: linear-gradient(
+    100deg,
+    rgba(216, 255, 67, 0.12),
+    rgba(118, 87, 255, 0.1)
+  );
+}
+.summary-winner-banner > svg {
+  color: var(--gold);
+}
+.summary-winner-banner div {
+  display: grid;
+  gap: 2px;
+}
+.summary-winner-banner span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+}
+.summary-winner-banner strong {
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+.summary-winner-banner > b {
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: 34px;
+}
 .summary-card-grid {
   margin: 34px 0 18px;
   display: grid;
@@ -2761,36 +2888,123 @@ html[data-motion="reduce"] *::after {
   gap: 12px;
 }
 .summary-card-grid article {
-  min-height: 190px;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  min-width: 0;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 19px;
   background: linear-gradient(155deg, var(--panel-2), var(--panel));
-  text-align: center;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.2);
 }
-.summary-card-grid article > span {
-  color: var(--muted);
+.summary-card-grid article.is-round-leader {
+  border-color: rgba(216, 255, 67, 0.46);
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.25),
+    0 0 28px rgba(216, 255, 67, 0.07);
+}
+.summary-card-grid article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.summary-card-grid article > header > span {
+  overflow: hidden;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summary-card-grid article > header > small {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(145, 120, 255, 0.16);
+  color: var(--purple-bright);
+  font-size: 9px;
+  font-weight: 900;
+}
+.summary-playing-card {
+  min-height: 152px;
+  padding: 14px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle, rgba(145, 120, 255, 0.15), transparent 55%), #11142a;
+}
+.is-round-leader .summary-playing-card {
+  border-color: rgba(216, 255, 67, 0.42);
+  background:
+    radial-gradient(circle, rgba(216, 255, 67, 0.12), transparent 58%), #11142a;
+}
+.summary-playing-card > span {
+  position: absolute;
+  top: 11px;
+  left: 12px;
+  color: var(--purple-bright);
+  font-family: var(--font-display);
   font-size: 12px;
 }
-.summary-card-grid strong {
-  font-family: var(--font-display);
-  font-size: 48px;
-  color: var(--lime);
-}
-.summary-card-grid small {
+.summary-playing-card > strong {
   color: white;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 44px;
 }
-.summary-card-grid em {
-  margin-top: 9px;
+.summary-playing-card > small {
+  align-self: end;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+}
+.summary-points-earned {
+  padding: 10px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(216, 255, 67, 0.07);
+}
+.summary-points-earned span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.summary-points-earned strong {
+  color: var(--lime);
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+.summary-card-footer {
+  display: grid;
+  gap: 5px;
+}
+.summary-card-footer em {
   color: var(--purple-bright);
   font-size: 10px;
   font-style: normal;
+  font-weight: 900;
   text-transform: uppercase;
+}
+.summary-card-footer > span {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+.summary-card-footer b {
+  color: white;
+}
+.summary-next-round {
+  margin: 0 0 20px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+}
+.summary-next-round strong {
+  color: var(--lime);
 }
 .game-state-page,
 .game-complete-page {
@@ -2853,11 +3067,11 @@ html[data-motion="reduce"] *::after {
     display: none;
   }
   .private-card-panel {
-    min-height: 275px;
+    min-height: 385px;
     padding: 28px 16px;
   }
-  .private-card-panel h1 {
-    font-size: 90px;
+  .point-card {
+    width: 205px;
   }
   .card-state {
     right: 11px;
@@ -2905,7 +3119,17 @@ html[data-motion="reduce"] *::after {
     grid-template-columns: 1fr 1fr;
   }
   .summary-card-grid article {
-    min-height: 155px;
+    padding: 11px;
+  }
+  .summary-winner-banner {
+    grid-template-columns: auto 1fr;
+  }
+  .summary-winner-banner > b {
+    grid-column: 2;
+    font-size: 28px;
+  }
+  .summary-playing-card {
+    min-height: 132px;
   }
   .mini-game-card {
     min-height: 500px;
@@ -2921,5 +3145,11 @@ html[data-motion="reduce"] *::after {
   }
   .memory-controls {
     grid-template-columns: repeat(2, 74px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .point-card {
+    animation: none;
   }
 }
