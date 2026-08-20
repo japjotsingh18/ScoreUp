@@ -15,7 +15,6 @@ const localBindingConfig = {
   main: "./worker/index.ts",
   // Newest compatibility date supported by the pinned Miniflare runtime.
   compatibility_date: "2026-05-22",
-  compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
         {
