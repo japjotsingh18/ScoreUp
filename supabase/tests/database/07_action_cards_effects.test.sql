@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(39);
+select plan(40);
 
 insert into auth.users (id, aud, role, is_anonymous, created_at, updated_at)
 select ('50000000-0000-4000-8000-' || lpad(value::text, 12, '0'))::uuid,
@@ -90,6 +90,10 @@ select ok((select current_value in (0,100,250,500,750,1000) from public.round_ca
 select is((select count(*) from private.point_card_mutations), 1::bigint, 'Fresh Draw leaves one private mutation record');
 select pg_temp.reset_effect_state(); select pg_temp.resolve_card(current_setting('scoreup.actor')::uuid, 'bonus_momentum');
 select is((select score from public.players where id = current_setting('scoreup.actor')::uuid), 1150::bigint, 'Bonus Momentum rounds 15 percent to 150');
+select pg_temp.reset_effect_state();
+update public.players set score = 0 where id = current_setting('scoreup.actor')::uuid;
+select pg_temp.resolve_card(current_setting('scoreup.actor')::uuid, 'bonus_momentum');
+select is((select score from public.players where id = current_setting('scoreup.actor')::uuid), 50::bigint, 'Bonus Momentum awards its 50 point minimum at zero score');
 select pg_temp.reset_effect_state(); select pg_temp.resolve_card(current_setting('scoreup.actor')::uuid, 'point_penalty');
 select is((select score from public.players where id = current_setting('scoreup.actor')::uuid), 600::bigint, 'Point Penalty removes 400 without underflow');
 select pg_temp.reset_effect_state(); select pg_temp.resolve_card(current_setting('scoreup.actor')::uuid, 'bad_move');

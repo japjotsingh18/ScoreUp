@@ -329,12 +329,14 @@ describe("GameClient action phase", () => {
       drawnAt: "2026-08-13T00:00:01Z",
       resolvedAt: "2026-08-13T00:00:02Z",
     });
-    testState.rpc.mockImplementation((name: string) =>
-      Promise.resolve({
-        data: name === "submit_action_choice" ? resolved : initial,
+    let submitted = false;
+    testState.rpc.mockImplementation((name: string) => {
+      if (name === "submit_action_choice") submitted = true;
+      return Promise.resolve({
+        data: submitted ? resolved : initial,
         error: null,
-      }),
-    );
+      });
+    });
 
     const user = userEvent.setup();
     render(<GameClient roomId={matchFixture.room.id} />);
@@ -351,6 +353,7 @@ describe("GameClient action phase", () => {
         ),
       ).toBe(true),
     );
+    expect(await screen.findByText("+500 points added")).toBeVisible();
     const submit = testState.rpc.mock.calls.find(
       ([name]) => name === "submit_action_choice",
     );
