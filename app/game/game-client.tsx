@@ -406,13 +406,6 @@ export function GameClient({ roomId }: { roomId: string | null }) {
 
   async function chooseAction(choice: "draw" | "skip") {
     if (auth.status !== "ready" || !snapshot) return;
-    if (
-      choice === "draw" &&
-      !window.confirm(
-        "Draw now? The server will select and immediately apply the card; it cannot be rejected or exchanged.",
-      )
-    )
-      return;
     setPending(`action-${choice}`);
     setNotice("");
     try {
@@ -1570,23 +1563,56 @@ function ActionChoicePanel({
                 A draw is selected and applied immediately by the server. It
                 cannot be previewed, rejected, saved, or exchanged.
               </p>
-              <div className="action-choice-buttons">
+              <div
+                className="action-choice-cards"
+                role="group"
+                aria-label="Choose your mystery action"
+              >
                 <button
-                  className="button button-lime"
+                  className="action-choice-card action-choice-card-mystery"
                   type="button"
                   disabled={pending !== null || action.drawsRemaining === 0}
                   onClick={() => void onChoice("draw")}
                 >
-                  <Sparkles size={18} />{" "}
-                  {pending === "action-draw" ? "Drawing…" : "Draw Mystery Card"}
+                  <span className="action-choice-card-corner">?</span>
+                  <span className="action-choice-card-icon" aria-hidden="true">
+                    <Sparkles size={34} />
+                  </span>
+                  <span className="action-choice-card-kicker">
+                    MYSTERY DECK
+                  </span>
+                  <strong>Draw Mystery Card</strong>
+                  <span className="action-choice-card-detail">
+                    Reveal one surprise and apply it instantly.
+                  </span>
+                  <span className="action-choice-card-cta">
+                    {pending === "action-draw"
+                      ? "Drawing…"
+                      : "Choose this card"}
+                  </span>
                 </button>
                 <button
-                  className="button button-secondary"
+                  className="action-choice-card action-choice-card-skip"
                   type="button"
                   disabled={pending !== null}
                   onClick={() => void onChoice("skip")}
                 >
-                  {pending === "action-skip" ? "Skipping…" : "Skip this round"}
+                  <span className="action-choice-card-corner">—</span>
+                  <span className="action-choice-card-icon" aria-hidden="true">
+                    <ShieldCheck size={34} />
+                  </span>
+                  <span className="action-choice-card-kicker">
+                    PLAY IT SAFE
+                  </span>
+                  <strong>Skip This Round</strong>
+                  <span className="action-choice-card-detail">
+                    Keep this round predictable and move to your point card.
+                  </span>
+                  <span className="action-choice-card-cta">
+                    {pending === "action-skip"
+                      ? "Skipping…"
+                      : "Choose this card"}
+                  </span>
                 </button>
               </div>
             </div>

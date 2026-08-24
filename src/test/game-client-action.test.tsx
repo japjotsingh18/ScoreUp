@@ -342,6 +342,8 @@ describe("GameClient action phase", () => {
       await screen.findByRole("button", { name: /draw mystery card/i }),
     );
 
+    expect(window.confirm).not.toHaveBeenCalled();
+
     await waitFor(() =>
       expect(
         testState.rpc.mock.calls.some(
