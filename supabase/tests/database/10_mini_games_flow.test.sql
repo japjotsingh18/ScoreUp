@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(46);
+select plan(48);
 
 insert into auth.users(id,aud,role,is_anonymous,created_at,updated_at)
 select ('70000000-0000-4000-8000-' || lpad(value::text,12,'0'))::uuid,
@@ -96,6 +96,16 @@ select is((select score from public.players where id=current_setting('scoreup.mi
 select is((select count(*) from public.score_ledger where mini_game_challenge_id=current_setting('scoreup.challenge1')::uuid),3::bigint,'settlement adds one pot award ledger entry');
 select is((select current_phase from public.rooms where id=current_setting('scoreup.mini_room1')::uuid),'round_summary'::public.game_phase,'empty queue advances to round summary');
 select is(jsonb_array_length(private.build_match_snapshot(current_setting('scoreup.mini_room1')::uuid,'70000000-0000-4000-8000-000000000001'::uuid)->'roundSummaries'->0->'miniGames'),1,'round summary includes the settled Mini-Game result');
+select ok(
+  (select phase_deadline from public.rooms where id=current_setting('scoreup.mini_room1')::uuid)
+    between statement_timestamp() + interval '14 seconds' and statement_timestamp() + interval '16 seconds',
+  'a Mini-Game challenge keeps the result page visible for 15 seconds'
+);
+select is(
+  jsonb_array_length(private.build_match_snapshot(current_setting('scoreup.mini_room1')::uuid,'70000000-0000-4000-8000-000000000001'::uuid)->'roundSummaries'->0->'miniGames'->0->'results'),
+  2,
+  'the settled Mini-Game result exposes both validated performance summaries'
+);
 
 -- Stake All and no-valid-submission random fallback.
 select set_config('scoreup.mini_room2',pg_temp.make_room('70000000-0000-4000-8000-000000000003','70000000-0000-4000-8000-000000000004','Mini All','71000000-0000-4000-8000-000000000002')::text,true);

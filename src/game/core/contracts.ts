@@ -216,6 +216,7 @@ export const miniGameTypes = [
 ] as const;
 export type MiniGameType = (typeof miniGameTypes)[number];
 export type MiniGameStakeType = "half" | "all";
+export type MiniGameValidationStatus = "accepted" | "rejected";
 export type MiniGameChallengeStatus =
   | "queued"
   | "active"
@@ -374,6 +375,13 @@ export type RoundSummary = {
     resolutionMethod: MiniGameResolutionMethod | null;
     challengerScoreChange: number;
     opponentScoreChange: number;
+    results: Array<{
+      playerId: string;
+      validationStatus: MiniGameValidationStatus;
+      elapsedMs: number | null;
+      primaryScore: number | null;
+      secondaryScore: number | null;
+    }>;
   }>;
 };
 
@@ -725,6 +733,19 @@ function parseSummary(value: unknown): RoundSummary {
         ),
         challengerScoreChange: integer(miniGame.challengerScoreChange),
         opponentScoreChange: integer(miniGame.opponentScoreChange),
+        results: array(miniGame.results).map((item) => {
+          const result = object(item);
+          return {
+            playerId: uuid(result.playerId),
+            validationStatus: oneOf(result.validationStatus, [
+              "accepted",
+              "rejected",
+            ] as const),
+            elapsedMs: nullable(result.elapsedMs, integer),
+            primaryScore: nullable(result.primaryScore, integer),
+            secondaryScore: nullable(result.secondaryScore, integer),
+          };
+        }),
       };
     }),
   };

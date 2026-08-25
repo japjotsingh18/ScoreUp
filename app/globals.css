@@ -3192,6 +3192,17 @@ html[data-motion="reduce"] *::after {
   font-size: 12px;
   text-align: right;
 }
+.summary-mini-games .summary-mini-result {
+  max-width: 520px;
+  justify-items: end;
+  gap: 7px;
+}
+.summary-mini-games .summary-mini-result > strong {
+  color: #f4f3ff;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: right;
+}
 .summary-mini-games article svg {
   flex: 0 0 auto;
   color: var(--gold);
@@ -3376,6 +3387,12 @@ html[data-motion="reduce"] *::after {
     flex-direction: column;
   }
   .summary-mini-games article p {
+    text-align: left;
+  }
+  .summary-mini-games .summary-mini-result {
+    justify-items: start;
+  }
+  .summary-mini-games .summary-mini-result > strong {
     text-align: left;
   }
 }

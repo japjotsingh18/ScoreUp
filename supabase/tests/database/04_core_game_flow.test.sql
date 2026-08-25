@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(49);
+select plan(51);
 
 create function pg_temp.complete_action_phase(p_room_id uuid)
 returns void
@@ -165,6 +165,11 @@ reset role;
 select is((select count(*) from public.round_cards_private where room_id = current_setting('scoreup.core_room_id')::uuid and resolution_status = 'unresolved'), 0::bigint, 'final unresolved player is automatically locked in');
 select is((select status from public.rounds where room_id = current_setting('scoreup.core_room_id')::uuid and round_number = 1), 'completed'::public.round_status, 'round completes when every card is resolved');
 select is((select current_phase from public.rooms where id = current_setting('scoreup.core_room_id')::uuid), 'round_summary'::public.game_phase, 'completed non-final round enters summary phase');
+select ok(
+  (select phase_deadline from public.rooms where id = current_setting('scoreup.core_room_id')::uuid)
+    between statement_timestamp() + interval '14 seconds' and statement_timestamp() + interval '16 seconds',
+  'a point-card challenge keeps the result page visible for 15 seconds'
+);
 select is((select count(*) from public.score_ledger where room_id = current_setting('scoreup.core_room_id')::uuid), 4::bigint, 'every participant has exactly one score-ledger award');
 
 -- Authorized summary advance creates a fresh round and distinct secure order.
@@ -209,6 +214,32 @@ select lives_ok(
 reset role;
 select is((select count(*) from public.point_decisions where room_id = current_setting('scoreup.core_room_id')::uuid and round_number = 2 and decision_type = 'timeout'), 1::bigint, 'timeout processing creates one decision and award');
 select is((select timeouts_count from public.players where id = current_setting('scoreup.timeout_player_id')::uuid), 1, 'timed-out player records one timeout');
+
+do $$
+declare v_round_id uuid;
+begin
+  select id into strict v_round_id
+  from public.rounds
+  where room_id = current_setting('scoreup.core_room_id')::uuid
+    and round_number = 2;
+  update public.round_cards_private
+  set resolution_status = 'resolved',
+      resolution_type = 'lock_in',
+      points_awarded = current_value,
+      resolved_at = statement_timestamp()
+  where round_id = v_round_id
+    and resolution_status = 'unresolved';
+  perform private.finish_round_or_advance_turn(
+    current_setting('scoreup.core_room_id')::uuid,
+    v_round_id
+  );
+end;
+$$;
+select ok(
+  (select phase_deadline from public.rooms where id = current_setting('scoreup.core_room_id')::uuid)
+    between statement_timestamp() + interval '9 seconds' and statement_timestamp() + interval '11 seconds',
+  'an ordinary result page remains visible for 10 seconds'
+);
 
 select * from finish();
 rollback;

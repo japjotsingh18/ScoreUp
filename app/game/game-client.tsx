@@ -28,6 +28,7 @@ import {
   type MiniGameSpecification,
   type MiniGameStakeType,
   type PublicGameEvent,
+  type RoundSummary,
 } from "../../src/game/core/contracts";
 import { actionResultMessages } from "../../src/game/core/action-results";
 import {
@@ -2039,6 +2040,10 @@ function RoundSummaryPanel({
             const winner = snapshot.players.find(
               (player) => player.id === miniGame.winnerPlayerId,
             );
+            const explanation = miniGameResultExplanation(
+              miniGame,
+              snapshot.players,
+            );
             return (
               <article key={miniGame.id}>
                 <div>
@@ -2050,14 +2055,17 @@ function RoundSummaryPanel({
                   </strong>
                 </div>
                 {miniGame.status === "resolved" ? (
-                  <p>
-                    <Trophy aria-hidden="true" /> {winner?.displayName} won the{" "}
-                    {miniGame.pot?.toLocaleString()} point pot.{" "}
-                    {challenger?.displayName}{" "}
-                    {formatSignedPoints(miniGame.challengerScoreChange)} ·{" "}
-                    {opponent?.displayName}{" "}
-                    {formatSignedPoints(miniGame.opponentScoreChange)}
-                  </p>
+                  <div className="summary-mini-result">
+                    <p>
+                      <Trophy aria-hidden="true" /> {winner?.displayName} won
+                      the {miniGame.pot?.toLocaleString()} point pot.{" "}
+                      {challenger?.displayName}{" "}
+                      {formatSignedPoints(miniGame.challengerScoreChange)} ·{" "}
+                      {opponent?.displayName}{" "}
+                      {formatSignedPoints(miniGame.opponentScoreChange)}
+                    </p>
+                    <strong>{explanation}</strong>
+                  </div>
                 ) : (
                   <p>No points moved because this Mini-Game was not settled.</p>
                 )}
@@ -2077,6 +2085,74 @@ function RoundSummaryPanel({
 function formatSignedPoints(value: number) {
   if (value === 0) return "0 points";
   return `${value > 0 ? "+" : "−"}${Math.abs(value).toLocaleString()} points`;
+}
+
+type MiniGameSummary = RoundSummary["miniGames"][number];
+
+function miniGameResultExplanation(
+  miniGame: MiniGameSummary,
+  players: MatchSnapshot["players"],
+) {
+  const playerName = (playerId: string | null) =>
+    players.find((player) => player.id === playerId)?.displayName ?? "A player";
+  const winnerName = playerName(miniGame.winnerPlayerId);
+  const loserId =
+    miniGame.winnerPlayerId === miniGame.challengerPlayerId
+      ? miniGame.opponentPlayerId
+      : miniGame.challengerPlayerId;
+  const loserName = playerName(loserId);
+
+  if (miniGame.resolutionMethod === "opponent_timeout")
+    return `${winnerName} won because ${loserName} did not submit before the deadline.`;
+  if (miniGame.resolutionMethod === "opponent_invalid")
+    return `${winnerName} won because their submission was valid and ${loserName}'s was invalid.`;
+  if (miniGame.resolutionMethod === "random_fallback")
+    return `${winnerName} was selected by the secure fallback after the players remained tied or no valid comparison was possible.`;
+  if (miniGame.resolutionMethod === "server_refund")
+    return "The server could not settle the challenge, so both stakes were returned.";
+
+  const accepted = miniGame.results.filter(
+    (result) => result.validationStatus === "accepted",
+  );
+  const winnerResult = accepted.find(
+    (result) => result.playerId === miniGame.winnerPlayerId,
+  );
+  const loserResult = accepted.find((result) => result.playerId === loserId);
+
+  if (!winnerResult || !loserResult)
+    return `${winnerName} won after the server validated both submitted performances.`;
+
+  if (miniGame.gameType === "different_symbol") {
+    const winnerCorrect =
+      (winnerResult.primaryScore ?? 100_000_000) < 100_000_000;
+    const loserCorrect =
+      (loserResult.primaryScore ?? 100_000_000) < 100_000_000;
+    if (winnerCorrect && !loserCorrect)
+      return `${winnerName} found the different symbol correctly; ${loserName} selected the wrong symbol.`;
+    if (winnerCorrect && loserCorrect)
+      return `Both players found the different symbol correctly. ${winnerName} won on the lower adjusted time: ${formatMilliseconds(winnerResult.primaryScore)} versus ${formatMilliseconds(loserResult.primaryScore)}.`;
+    return `Neither player found the different symbol. ${winnerName} won on the faster validated response time: ${formatMilliseconds(winnerResult.secondaryScore)} versus ${formatMilliseconds(loserResult.secondaryScore)}.`;
+  }
+
+  if (miniGame.gameType === "memory_sequence") {
+    if (winnerResult.primaryScore !== loserResult.primaryScore)
+      return `${winnerName} remembered more symbols correctly: ${winnerResult.primaryScore ?? 0} versus ${loserResult.primaryScore ?? 0}.`;
+    return `Both remembered ${winnerResult.primaryScore ?? 0} symbols correctly. ${winnerName} won on the faster time: ${formatMilliseconds(winnerResult.secondaryScore)} versus ${formatMilliseconds(loserResult.secondaryScore)}.`;
+  }
+
+  if (winnerResult.primaryScore !== loserResult.primaryScore)
+    return `${winnerName} stopped closer to the target: ${formatTargetDistance(winnerResult.primaryScore)} away versus ${formatTargetDistance(loserResult.primaryScore)}.`;
+  return `Both stopped equally close to the target. ${winnerName} won on the faster time: ${formatMilliseconds(winnerResult.secondaryScore)} versus ${formatMilliseconds(loserResult.secondaryScore)}.`;
+}
+
+function formatMilliseconds(value: number | null) {
+  if (value === null) return "no recorded time";
+  return `${(value / 1_000).toFixed(2)}s`;
+}
+
+function formatTargetDistance(value: number | null) {
+  if (value === null) return "an unknown distance";
+  return `${(value / 10_000).toFixed(2)}%`;
 }
 
 function GameState({

@@ -473,6 +473,22 @@ describe("GameClient round results", () => {
         resolutionMethod: "game_result",
         challengerScoreChange: -50,
         opponentScoreChange: 50,
+        results: [
+          {
+            playerId: summary.players[0].id,
+            validationStatus: "accepted",
+            elapsedMs: 1_100,
+            primaryScore: 25_000,
+            secondaryScore: 1_100,
+          },
+          {
+            playerId: summary.players[1].id,
+            validationStatus: "accepted",
+            elapsedMs: 1_300,
+            primaryScore: 10_000,
+            secondaryScore: 1_300,
+          },
+        ],
       },
     ];
     testState.rpc.mockResolvedValue({ data: summary, error: null });
@@ -486,6 +502,57 @@ describe("GameClient round results", () => {
     expect(
       screen.getByRole("region", { name: "Mini-Game results" }),
     ).toHaveTextContent("Maya −50 points · Jordan +50 points");
+    expect(
+      screen.getByRole("region", { name: "Mini-Game results" }),
+    ).toHaveTextContent(
+      "Jordan stopped closer to the target: 1.00% away versus 2.50%",
+    );
+  });
+
+  it("explains a Different Symbol win by correctness and adjusted time", async () => {
+    const summary = roundSummarySnapshot() as MatchSnapshot;
+    summary.roundSummaries[0].miniGames = [
+      {
+        id: "8db937ae-04cc-4d45-9b4d-746674cebc21",
+        challengerPlayerId: summary.players[0].id,
+        opponentPlayerId: summary.players[1].id,
+        stakeType: "half",
+        stakePerPlayer: 50,
+        pot: 100,
+        gameType: "different_symbol",
+        attempt: 1,
+        status: "resolved",
+        winnerPlayerId: summary.players[0].id,
+        resolutionMethod: "game_result",
+        challengerScoreChange: 50,
+        opponentScoreChange: -50,
+        results: [
+          {
+            playerId: summary.players[0].id,
+            validationStatus: "accepted",
+            elapsedMs: 900,
+            primaryScore: 900,
+            secondaryScore: 900,
+          },
+          {
+            playerId: summary.players[1].id,
+            validationStatus: "accepted",
+            elapsedMs: 1_250,
+            primaryScore: 1_250,
+            secondaryScore: 1_250,
+          },
+        ],
+      },
+    ];
+    testState.rpc.mockResolvedValue({ data: summary, error: null });
+
+    render(<GameClient roomId={matchFixture.room.id} />);
+
+    expect(
+      await screen.findByText(
+        "Both players found the different symbol correctly. Maya won on the lower adjusted time: 0.90s versus 1.25s.",
+      ),
+    ).toBeVisible();
   });
 });
 

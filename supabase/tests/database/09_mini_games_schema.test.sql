@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(38);
+select plan(39);
 
 select has_table('public', 'mini_game_challenges', 'Mini-Game queue table exists');
 select has_table('public', 'mini_game_submissions', 'Mini-Game submission table exists');
@@ -34,6 +34,11 @@ select has_function('public', 'get_mini_game_snapshot', array['uuid'], 'particip
 select has_function('private', 'refund_mini_game_escrow', array['uuid','text'], 'server-only refund operation exists');
 select ok(not has_function_privilege('authenticated', 'private.select_mini_game_type()', 'execute'), 'clients cannot choose the Mini-Game');
 select ok(not has_function_privilege('authenticated', 'private.generate_mini_game_spec(public.mini_game_type,bytea)', 'execute'), 'clients cannot invoke protected specification derivation');
+select ok(
+  not has_function_privilege('authenticated', 'private.build_match_snapshot(uuid,uuid)', 'execute')
+  and not has_function_privilege('authenticated', 'private.build_round_clarity_match_snapshot(uuid,uuid)', 'execute'),
+  'clients cannot bypass the authorized snapshot RPC or impersonate another player'
+);
 select ok(not has_table_privilege('authenticated', 'private.mini_game_specs', 'select'), 'clients cannot read raw seeds');
 select ok(not has_table_privilege('authenticated', 'private.mini_game_specs', 'update'), 'clients cannot alter specifications');
 select ok(not has_table_privilege('authenticated', 'public.score_ledger', 'insert'), 'clients cannot award or escrow points directly');

@@ -153,7 +153,9 @@ test.describe("Milestone 6 local multiplayer", () => {
     await host.getByRole("button", { name: "STOP" }).click();
     await guest.waitForTimeout(250);
     await guest.getByRole("button", { name: "STOP" }).click();
-    await expect(host.locator(".game-round-label")).toContainText("2 / 6");
+    await expect(host.locator(".game-round-label")).toContainText("2 / 6", {
+      timeout: 20_000,
+    });
 
     provisionFinalTie(roomId);
     await expect(
@@ -243,7 +245,9 @@ test.describe("Milestone 6 local multiplayer", () => {
     await enterPointDecisions(clients);
     const firstTurn = await activeTurn(clients);
     await firstTurn.active.getByRole("button", { name: "Lock In" }).click();
-    await expect(host.locator(".game-round-label")).toContainText("2 / 6");
+    await expect(host.locator(".game-round-label")).toContainText("2 / 6", {
+      timeout: 20_000,
+    });
 
     provisionFinalTie(roomId);
     await expect(
