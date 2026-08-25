@@ -95,6 +95,11 @@ export const matchFixture = {
     result: null,
     rematchRoomId: null,
   },
+  summaryReadyState: {
+    ownReady: false,
+    readyCount: 0,
+    participantCount: 2,
+  },
   eligibleChallengeTargetIds: ["e66ab6c6-3eb6-4df4-ad2f-c2ba69aec19b"],
   roundSummaries: [],
   recentEvents: [

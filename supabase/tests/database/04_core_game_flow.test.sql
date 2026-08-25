@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(51);
+select plan(53);
 
 create function pg_temp.complete_action_phase(p_room_id uuid)
 returns void
@@ -237,8 +237,43 @@ end;
 $$;
 select ok(
   (select phase_deadline from public.rooms where id = current_setting('scoreup.core_room_id')::uuid)
-    between statement_timestamp() + interval '9 seconds' and statement_timestamp() + interval '11 seconds',
-  'an ordinary result page remains visible for 10 seconds'
+    between statement_timestamp() + interval '14 seconds' and statement_timestamp() + interval '16 seconds',
+  'an ordinary result page remains visible for 15 seconds'
+);
+
+do $$
+declare v_user integer;
+begin
+  for v_user in 1..3 loop
+    perform set_config(
+      'request.jwt.claim.sub',
+      '30000000-0000-4000-8000-' || lpad(v_user::text, 12, '0'),
+      true
+    );
+    perform public.set_round_summary_ready(
+      current_setting('scoreup.core_room_id')::uuid,
+      true,
+      gen_random_uuid()
+    );
+  end loop;
+end;
+$$;
+select is(
+  (select current_round from public.rooms where id = current_setting('scoreup.core_room_id')::uuid),
+  2::smallint,
+  'the next round waits while any participant is not ready'
+);
+
+select set_config('request.jwt.claim.sub', '30000000-0000-4000-8000-000000000004', true);
+select public.set_round_summary_ready(
+  current_setting('scoreup.core_room_id')::uuid,
+  true,
+  gen_random_uuid()
+);
+select is(
+  (select current_round from public.rooms where id = current_setting('scoreup.core_room_id')::uuid),
+  3::smallint,
+  'the server starts the next round immediately when every participant is ready'
 );
 
 select * from finish();

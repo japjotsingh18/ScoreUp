@@ -446,6 +446,45 @@ describe("GameClient round results", () => {
       within(winningCard!).getByText("Complete round change"),
     ).toBeVisible();
     expect(within(winningCard!).getByText("2,225")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Ready for next round" }),
+    ).toBeVisible();
+    expect(screen.getByText("0/2 ready")).toBeVisible();
+  });
+
+  it("submits synchronized result readiness without waiting for the timer", async () => {
+    const summary = roundSummarySnapshot() as MatchSnapshot;
+    const ready = {
+      ...summary,
+      summaryReadyState: {
+        ...summary.summaryReadyState,
+        ownReady: true,
+        readyCount: 1,
+      },
+    };
+    let current = summary;
+    testState.rpc.mockImplementation((name: string) => {
+      if (name === "set_round_summary_ready") current = ready;
+      return Promise.resolve({ data: current, error: null });
+    });
+
+    const user = userEvent.setup();
+    render(<GameClient roomId={matchFixture.room.id} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Ready for next round" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        testState.rpc.mock.calls.some(
+          ([name]) => name === "set_round_summary_ready",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Ready — click to undo" }),
+    ).toBeVisible();
+    expect(screen.getByText("1/2 ready")).toBeVisible();
   });
 
   it("shows the Mini-Game winner and reason before the complete round result", async () => {

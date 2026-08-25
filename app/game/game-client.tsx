@@ -49,6 +49,7 @@ import {
   processMiniGameTimeout,
   processChampionshipTimeout,
   requestMiniGameChallenge,
+  setRoundSummaryReady,
   submitMiniGameResult,
   submitChampionshipResult,
   submitActionChoice,
@@ -411,6 +412,27 @@ export function GameClient({ roomId }: { roomId: string | null }) {
     .reverse()
     .find((event) => event.type === "challenge_resolved");
 
+  async function toggleSummaryReady() {
+    if (auth.status !== "ready" || !snapshot) return;
+    setPending("summary-ready");
+    setError("");
+    try {
+      applySnapshot(
+        await setRoundSummaryReady(
+          auth.client,
+          snapshot.room.id,
+          !snapshot.summaryReadyState.ownReady,
+          crypto.randomUUID(),
+        ),
+      );
+    } catch (cause) {
+      setError(messageFor(cause));
+      void refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
   async function chooseAction(choice: "draw" | "skip") {
     if (auth.status !== "ready" || !snapshot) return;
     setPending(`action-${choice}`);
@@ -739,7 +761,12 @@ export function GameClient({ roomId }: { roomId: string | null }) {
         showingMiniGameResult ? (
           <MiniGameResultPanel snapshot={snapshot} remaining={remaining} />
         ) : (
-          <RoundSummaryPanel snapshot={snapshot} remaining={remaining} />
+          <RoundSummaryPanel
+            snapshot={snapshot}
+            remaining={remaining}
+            pending={pending}
+            onReady={toggleSummaryReady}
+          />
         )
       ) : snapshot.room.phase === "action_choice" ? (
         <ActionChoicePanel
@@ -1932,9 +1959,13 @@ function Leaderboard({ snapshot }: { snapshot: MatchSnapshot }) {
 function RoundSummaryPanel({
   snapshot,
   remaining,
+  pending,
+  onReady,
 }: {
   snapshot: MatchSnapshot;
   remaining: number;
+  pending: string | null;
+  onReady: () => Promise<void>;
 }) {
   const summary = snapshot.roundSummaries.at(-1)!;
   const highestChange = Math.max(
@@ -2032,9 +2063,35 @@ function RoundSummaryPanel({
           );
         })}
       </div>
-      <p className="summary-next-round" role="timer">
-        Next round begins in <strong>{remaining}</strong> seconds
-      </p>
+      <div className="summary-ready-panel">
+        <button
+          className={
+            snapshot.summaryReadyState.ownReady
+              ? "button button-secondary is-ready"
+              : "button button-lime"
+          }
+          type="button"
+          disabled={pending !== null}
+          onClick={() => void onReady()}
+        >
+          <Check aria-hidden="true" />
+          {pending === "summary-ready"
+            ? "Updating…"
+            : snapshot.summaryReadyState.ownReady
+              ? "Ready — click to undo"
+              : "Ready for next round"}
+        </button>
+        <div>
+          <strong>
+            {snapshot.summaryReadyState.readyCount}/
+            {snapshot.summaryReadyState.participantCount} ready
+          </strong>
+          <p className="summary-next-round" role="timer">
+            Everyone ready starts immediately · otherwise next round begins in{" "}
+            <strong>{remaining}</strong> seconds
+          </p>
+        </div>
+      </div>
       <Leaderboard snapshot={snapshot} />
     </section>
   );

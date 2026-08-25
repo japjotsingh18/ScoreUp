@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(32);
+select plan(34);
 
 select has_table('public', 'rounds', 'rounds table exists');
 select has_table('public', 'round_cards_private', 'private round-card table exists');
@@ -20,6 +20,7 @@ select has_column('public', 'players', 'score', 'players have an authoritative s
 select has_column('public', 'players', 'match_participant', 'players have frozen-roster membership');
 select has_column('public', 'players', 'action_draw_allowance', 'future action allowance is stored');
 select has_column('public', 'players', 'mini_game_token_used', 'future Mini-Game token state is stored');
+select has_column('public', 'players', 'summary_ready_round', 'per-round result readiness is stored');
 
 select col_is_pk('public', 'rounds', 'id', 'rounds use UUID primary keys');
 select col_is_fk('public', 'rounds', 'room_id', 'rounds belong to rooms');
@@ -39,6 +40,7 @@ select ok((select relrowsecurity from pg_class where oid = 'public.round_cards_p
 select has_function('public', 'lock_in_point_card', array['uuid', 'uuid'], 'Lock In RPC exists');
 select has_function('public', 'challenge_point_card', array['uuid', 'uuid', 'uuid'], 'challenge RPC exists');
 select has_function('public', 'process_expired_turn', array['uuid', 'uuid', 'uuid'], 'timeout RPC exists');
+select has_function('public', 'set_round_summary_ready', array['uuid', 'boolean', 'uuid'], 'result readiness RPC exists');
 
 select * from finish();
 rollback;

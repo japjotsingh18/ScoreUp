@@ -467,6 +467,11 @@ export type MatchSnapshot = {
     result: MatchResultSnapshot | null;
     rematchRoomId: string | null;
   };
+  summaryReadyState: {
+    ownReady: boolean;
+    readyCount: number;
+    participantCount: number;
+  };
   eligibleChallengeTargetIds: string[];
   roundSummaries: RoundSummary[];
   recentEvents: PublicGameEvent[];
@@ -829,6 +834,7 @@ export const matchSnapshotSchema = schema<MatchSnapshot>((value) => {
   const room = object(snapshot.room);
   const round = object(snapshot.round);
   const privatePlayer = object(snapshot.privatePlayer);
+  const summaryReadyState = object(snapshot.summaryReadyState);
   return {
     room: {
       id: uuid(room.id),
@@ -884,6 +890,11 @@ export const matchSnapshotSchema = schema<MatchSnapshot>((value) => {
     actionState: parseActionState(snapshot.actionState),
     miniGameState: parseMiniGameState(snapshot.miniGameState),
     completionState: parseCompletionState(snapshot.completionState),
+    summaryReadyState: {
+      ownReady: boolean(summaryReadyState.ownReady),
+      readyCount: integer(summaryReadyState.readyCount),
+      participantCount: integer(summaryReadyState.participantCount),
+    },
     eligibleChallengeTargetIds: array(snapshot.eligibleChallengeTargetIds).map(
       uuid,
     ),

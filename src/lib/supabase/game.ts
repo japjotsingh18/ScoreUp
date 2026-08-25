@@ -139,6 +139,20 @@ export function advanceRound(
   });
 }
 
+export function setRoundSummaryReady(
+  client: SupabaseClient,
+  roomId: string,
+  ready: boolean,
+  idempotencyKey: string,
+) {
+  const input = lockInInputSchema.parse({ roomId, idempotencyKey });
+  return runGameRpc(client, "set_round_summary_ready", {
+    p_room_id: input.roomId,
+    p_ready: ready,
+    p_idempotency_key: input.idempotencyKey,
+  });
+}
+
 export function submitActionChoice(
   client: SupabaseClient,
   roomId: string,
