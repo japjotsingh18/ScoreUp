@@ -29,6 +29,7 @@ import {
   type MiniGameStakeType,
   type PublicGameEvent,
 } from "../../src/game/core/contracts";
+import { actionResultMessages } from "../../src/game/core/action-results";
 import {
   correctConsecutiveSymbols,
   previewMatchedStake,
@@ -1472,7 +1473,10 @@ function ActionChoicePanel({
   const targets = snapshot.players.filter((player) =>
     draw?.eligibleTargetIds.includes(player.id),
   );
-  const result = draw?.status === "resolved" ? actionResultMessages(draw) : [];
+  const result =
+    draw?.status === "resolved"
+      ? actionResultMessages(draw, snapshot.players)
+      : [];
 
   return (
     <section className="game-grid action-game-grid">
@@ -1524,11 +1528,7 @@ function ActionChoicePanel({
               ) : (
                 <div className="action-result">
                   <strong>Resolved immediately</strong>
-                  <p>
-                    {result.length
-                      ? result.join(" · ")
-                      : "The server applied this card securely."}
-                  </p>
+                  <p>{result.join(" ")}</p>
                 </div>
               )}
             </div>
@@ -1637,43 +1637,6 @@ function ActionChoicePanel({
       </aside>
     </section>
   );
-}
-
-function actionResultMessages(
-  draw: NonNullable<MatchSnapshot["actionState"]["draw"]>,
-) {
-  const result = { ...draw.publicResult, ...draw.privateResult };
-  const messages: string[] = [];
-  const pointsChanged = result.pointsChanged;
-  if (typeof pointsChanged === "number") {
-    messages.push(
-      pointsChanged > 0
-        ? `+${pointsChanged.toLocaleString()} points added`
-        : pointsChanged < 0
-          ? `${Math.abs(pointsChanged).toLocaleString()} points deducted`
-          : "No score change",
-    );
-  }
-  if (typeof result.newCardValue === "number") {
-    messages.push(`Point card is now ${result.newCardValue.toLocaleString()}`);
-  }
-  if (typeof result.pointsTransferred === "number") {
-    messages.push(
-      result.pointsTransferred > 0
-        ? `${result.pointsTransferred.toLocaleString()} points transferred`
-        : "No points transferred",
-    );
-  }
-  if (typeof result.multiplier === "number") {
-    messages.push(`${result.multiplier}× point-card multiplier`);
-  }
-  if (result.shieldActive === true || result.shieldApplied === true) {
-    messages.push("Shield activated for this round");
-  }
-  if (result.cardsSwapped === true) messages.push("Point cards swapped");
-  if (result.cardReplaced === true) messages.push("Point card replaced");
-  if (result.blocked === true) messages.push("Effect blocked by a shield");
-  return messages;
 }
 
 function Connection({ state }: { state: RealtimeConnectionState }) {

@@ -353,7 +353,9 @@ describe("GameClient action phase", () => {
         ),
       ).toBe(true),
     );
-    expect(await screen.findByText("+500 points added")).toBeVisible();
+    expect(
+      await screen.findByText("Score Boost worked: You gained 500 points."),
+    ).toBeVisible();
     const submit = testState.rpc.mock.calls.find(
       ([name]) => name === "submit_action_choice",
     );
