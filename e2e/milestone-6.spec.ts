@@ -143,8 +143,9 @@ test.describe("Milestone 6 local multiplayer", () => {
     await active
       .getByLabel("Challenge an unresolved player")
       .selectOption({ index: 1 });
-    active.once("dialog", (dialog) => dialog.accept());
-    await active.getByRole("button", { name: "Challenge" }).click();
+    await active
+      .getByRole("button", { name: "Challenge", exact: true })
+      .click();
     await expect(host.getByText("MINI-GAME RESOLUTION")).toBeVisible();
     await expect(guest.getByText("MINI-GAME RESOLUTION")).toBeVisible();
     forceActiveMiniGameToStopBar(roomId);

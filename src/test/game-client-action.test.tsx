@@ -448,7 +448,7 @@ describe("GameClient round results", () => {
     expect(within(winningCard!).getByText("2,225")).toBeVisible();
   });
 
-  it("includes the Mini-Game winner and net score movement in the round result", async () => {
+  it("shows the Mini-Game winner and reason before the complete round result", async () => {
     const summary = roundSummarySnapshot() as MatchSnapshot;
     summary.players = [
       { ...summary.players[0], score: 1_950 },
@@ -496,17 +496,20 @@ describe("GameClient round results", () => {
     render(<GameClient roomId={matchFixture.room.id} />);
 
     expect(
-      await screen.findByRole("heading", { name: "JORDAN WINS THE ROUND." }),
+      await screen.findByRole("heading", {
+        name: "JORDAN WON THE CHALLENGE.",
+      }),
     ).toBeVisible();
-    expect(screen.getByText(/Jordan won the 100 point pot/i)).toBeVisible();
     expect(
-      screen.getByRole("region", { name: "Mini-Game results" }),
+      screen.getByRole("region", { name: "Mini-Game result" }),
     ).toHaveTextContent("Maya −50 points · Jordan +50 points");
     expect(
-      screen.getByRole("region", { name: "Mini-Game results" }),
+      screen.getByRole("region", { name: "Mini-Game result" }),
     ).toHaveTextContent(
       "Jordan stopped closer to the target: 1.00% away versus 2.50%",
     );
+    expect(screen.queryByText("Point-card award")).not.toBeInTheDocument();
+    expect(screen.getByText(/Complete round results in/i)).toBeVisible();
   });
 
   it("explains a Different Symbol win by correctness and adjusted time", async () => {
@@ -553,6 +556,40 @@ describe("GameClient round results", () => {
         "Both players found the different symbol correctly. Maya won on the lower adjusted time: 0.90s versus 1.25s.",
       ),
     ).toBeVisible();
+  });
+
+  it("switches to the complete round result for the final ten seconds", async () => {
+    const summary = roundSummarySnapshot() as MatchSnapshot;
+    summary.room.phaseDeadline = new Date(Date.now() + 9_000).toISOString();
+    summary.roundSummaries[0].miniGames = [
+      {
+        id: "8db937ae-04cc-4d45-9b4d-746674cebc22",
+        challengerPlayerId: summary.players[0].id,
+        opponentPlayerId: summary.players[1].id,
+        stakeType: "half",
+        stakePerPlayer: 50,
+        pot: 100,
+        gameType: "stop_bar",
+        attempt: 1,
+        status: "resolved",
+        winnerPlayerId: summary.players[1].id,
+        resolutionMethod: "game_result",
+        challengerScoreChange: -50,
+        opponentScoreChange: 50,
+        results: [],
+      },
+    ];
+    testState.rpc.mockResolvedValue({ data: summary, error: null });
+
+    render(<GameClient roomId={matchFixture.room.id} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "JORDAN WINS THE ROUND." }),
+    ).toBeVisible();
+    expect(screen.getAllByText("Point-card award")).toHaveLength(2);
+    expect(
+      screen.queryByRole("region", { name: "Mini-Game result" }),
+    ).not.toBeInTheDocument();
   });
 });
 

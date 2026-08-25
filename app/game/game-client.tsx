@@ -402,6 +402,11 @@ export function GameClient({ roomId }: { roomId: string | null }) {
     self && snapshot?.room.currentTurnPlayerId === self.id && !self.resolved,
   );
   const latestSummary = snapshot?.roundSummaries.at(-1);
+  const showingMiniGameResult = Boolean(
+    snapshot?.room.phase === "round_summary" &&
+    latestSummary?.miniGames.length &&
+    remaining > 10,
+  );
   const latestChallenge = [...(snapshot?.recentEvents ?? [])]
     .reverse()
     .find((event) => event.type === "challenge_resolved");
@@ -714,7 +719,9 @@ export function GameClient({ roomId }: { roomId: string | null }) {
         <div>
           <Radio size={16} />{" "}
           {snapshot.room.phase === "round_summary"
-            ? "ROUND SUMMARY"
+            ? showingMiniGameResult
+              ? "MINI-GAME RESULT"
+              : "ROUND SUMMARY"
             : snapshot.room.phase === "action_choice"
               ? `ACTION CHOICE · ${snapshot.actionState.respondedCount}/${snapshot.actionState.participantCount} READY`
               : snapshot.room.phase === "mini_game_resolution"
@@ -729,7 +736,11 @@ export function GameClient({ roomId }: { roomId: string | null }) {
       </section>
 
       {snapshot.room.phase === "round_summary" && latestSummary ? (
-        <RoundSummaryPanel snapshot={snapshot} remaining={remaining} />
+        showingMiniGameResult ? (
+          <MiniGameResultPanel snapshot={snapshot} remaining={remaining} />
+        ) : (
+          <RoundSummaryPanel snapshot={snapshot} remaining={remaining} />
+        )
       ) : snapshot.room.phase === "action_choice" ? (
         <ActionChoicePanel
           snapshot={snapshot}
@@ -2021,55 +2032,104 @@ function RoundSummaryPanel({
           );
         })}
       </div>
-      {summary.miniGames.length > 0 && (
-        <section className="summary-mini-games" aria-label="Mini-Game results">
-          <p className="eyebrow">MINI-GAME RESULTS</p>
-          {summary.miniGames.map((miniGame) => {
-            const challenger = snapshot.players.find(
-              (player) => player.id === miniGame.challengerPlayerId,
-            );
-            const opponent = snapshot.players.find(
-              (player) => player.id === miniGame.opponentPlayerId,
-            );
-            const winner = snapshot.players.find(
-              (player) => player.id === miniGame.winnerPlayerId,
-            );
-            const explanation = miniGameResultExplanation(
-              miniGame,
-              snapshot.players,
-            );
-            return (
-              <article key={miniGame.id}>
-                <div>
-                  <span>
-                    {miniGame.gameType?.replaceAll("_", " ") ?? "Mini-Game"}
-                  </span>
-                  <strong>
-                    {challenger?.displayName} challenged {opponent?.displayName}
-                  </strong>
-                </div>
-                {miniGame.status === "resolved" ? (
-                  <div className="summary-mini-result">
-                    <p>
-                      <Trophy aria-hidden="true" /> {winner?.displayName} won
-                      the {miniGame.pot?.toLocaleString()} point pot.{" "}
-                      {challenger?.displayName}{" "}
-                      {formatSignedPoints(miniGame.challengerScoreChange)} ·{" "}
-                      {opponent?.displayName}{" "}
-                      {formatSignedPoints(miniGame.opponentScoreChange)}
-                    </p>
-                    <strong>{explanation}</strong>
-                  </div>
-                ) : (
-                  <p>No points moved because this Mini-Game was not settled.</p>
-                )}
-              </article>
-            );
-          })}
-        </section>
-      )}
       <p className="summary-next-round" role="timer">
         Next round begins in <strong>{remaining}</strong> seconds
+      </p>
+      <Leaderboard snapshot={snapshot} />
+    </section>
+  );
+}
+
+function MiniGameResultPanel({
+  snapshot,
+  remaining,
+}: {
+  snapshot: MatchSnapshot;
+  remaining: number;
+}) {
+  const miniGames = snapshot.roundSummaries.at(-1)!.miniGames;
+  const resolved = miniGames.filter(
+    (miniGame) => miniGame.status === "resolved",
+  );
+  const winnerNames = resolved
+    .map(
+      (miniGame) =>
+        snapshot.players.find((player) => player.id === miniGame.winnerPlayerId)
+          ?.displayName,
+    )
+    .filter(Boolean);
+
+  return (
+    <section className="mini-result-stage" aria-label="Mini-Game result">
+      <header>
+        <p className="eyebrow">
+          {miniGames.length === 1
+            ? "MINI-GAME COMPLETE"
+            : "MINI-GAMES COMPLETE"}
+        </p>
+        <h1>
+          {winnerNames.length === 1
+            ? `${winnerNames[0]?.toUpperCase()} WON THE CHALLENGE.`
+            : "THE MINI-GAME CHALLENGES ARE SETTLED."}
+        </h1>
+        <p>Here is exactly who won, why they won, and how the pot moved.</p>
+      </header>
+
+      <div className="mini-result-list">
+        {miniGames.map((miniGame) => {
+          const challenger = snapshot.players.find(
+            (player) => player.id === miniGame.challengerPlayerId,
+          );
+          const opponent = snapshot.players.find(
+            (player) => player.id === miniGame.opponentPlayerId,
+          );
+          const winner = snapshot.players.find(
+            (player) => player.id === miniGame.winnerPlayerId,
+          );
+          return (
+            <article key={miniGame.id}>
+              <div className="mini-result-matchup">
+                <span>
+                  {miniGame.gameType?.replaceAll("_", " ") ?? "Mini-Game"}
+                </span>
+                <strong>
+                  {challenger?.displayName} challenged {opponent?.displayName}
+                </strong>
+              </div>
+              {miniGame.status === "resolved" ? (
+                <>
+                  <div className="mini-result-winner">
+                    <Trophy aria-hidden="true" />
+                    <div>
+                      <span>CHALLENGE WINNER</span>
+                      <strong>{winner?.displayName}</strong>
+                    </div>
+                    <b>{miniGame.pot?.toLocaleString()} point pot</b>
+                  </div>
+                  <p className="mini-result-reason">
+                    {miniGameResultExplanation(miniGame, snapshot.players)}
+                  </p>
+                  <p className="mini-result-transfer">
+                    {challenger?.displayName}{" "}
+                    {formatSignedPoints(miniGame.challengerScoreChange)} ·{" "}
+                    {opponent?.displayName}{" "}
+                    {formatSignedPoints(miniGame.opponentScoreChange)}
+                  </p>
+                </>
+              ) : (
+                <p className="mini-result-reason">
+                  No winner was declared and no points moved.{" "}
+                  {miniGameResultExplanation(miniGame, snapshot.players)}
+                </p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+
+      <p className="mini-result-next" role="timer">
+        Complete round results in <strong>{Math.max(0, remaining - 10)}</strong>{" "}
+        seconds
       </p>
       <Leaderboard snapshot={snapshot} />
     </section>
