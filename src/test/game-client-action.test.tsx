@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient } from "../../app/game/game-client";
+import type { MatchSnapshot } from "../game/core/contracts";
 import { matchFixture } from "./fixtures/match";
 
 const testState = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -117,6 +118,11 @@ function roundSummarySnapshot() {
           },
         ],
         decisions: [],
+        scoreChanges: [
+          { playerId: base.players[0].id, pointsChanged: 0 },
+          { playerId: base.players[1].id, pointsChanged: 1_250 },
+        ],
+        miniGames: [],
       },
     ],
   };
@@ -167,6 +173,7 @@ function miniGameSnapshot(
       eligibleOpponentIds: [],
       roomQueueCount: 1,
       roomHasActiveChallenge: true,
+      publicChallenge: null,
       challenge: {
         id: "f6459f71-c29f-43d2-887c-a13f4d56a171",
         status: "active",
@@ -418,13 +425,13 @@ describe("GameClient round results", () => {
   beforeEach(() => testState.rpc.mockReset());
   afterEach(() => vi.restoreAllMocks());
 
-  it("names the round leader and separates card value, earned points, and new total", async () => {
-    const summary = roundSummarySnapshot();
+  it("names the round winner and separates card value, net change, and new total", async () => {
+    const summary = roundSummarySnapshot() as MatchSnapshot;
     testState.rpc.mockResolvedValue({ data: summary, error: null });
     render(<GameClient roomId={matchFixture.room.id} />);
 
     expect(
-      await screen.findByRole("heading", { name: "JORDAN TAKES THE ROUND." }),
+      await screen.findByRole("heading", { name: "JORDAN WINS THE ROUND." }),
     ).toBeVisible();
     expect(
       screen.getByRole("status", { name: "Round result" }),
@@ -434,7 +441,51 @@ describe("GameClient round results", () => {
     ).toHaveTextContent("+1,250");
     const winningCard = screen.getByText("Challenge winner").closest("article");
     expect(winningCard).not.toBeNull();
+    expect(within(winningCard!).getByText("Point-card award")).toBeVisible();
+    expect(
+      within(winningCard!).getByText("Complete round change"),
+    ).toBeVisible();
     expect(within(winningCard!).getByText("2,225")).toBeVisible();
+  });
+
+  it("includes the Mini-Game winner and net score movement in the round result", async () => {
+    const summary = roundSummarySnapshot() as MatchSnapshot;
+    summary.players = [
+      { ...summary.players[0], score: 1_950 },
+      { ...summary.players[1], score: 2_525 },
+    ];
+    summary.roundSummaries[0].scoreChanges = [
+      { playerId: summary.players[0].id, pointsChanged: -50 },
+      { playerId: summary.players[1].id, pointsChanged: 1_300 },
+    ];
+    summary.roundSummaries[0].miniGames = [
+      {
+        id: "8db937ae-04cc-4d45-9b4d-746674cebc20",
+        challengerPlayerId: summary.players[0].id,
+        opponentPlayerId: summary.players[1].id,
+        stakeType: "half",
+        stakePerPlayer: 50,
+        pot: 100,
+        gameType: "stop_bar",
+        attempt: 1,
+        status: "resolved",
+        winnerPlayerId: summary.players[1].id,
+        resolutionMethod: "game_result",
+        challengerScoreChange: -50,
+        opponentScoreChange: 50,
+      },
+    ];
+    testState.rpc.mockResolvedValue({ data: summary, error: null });
+
+    render(<GameClient roomId={matchFixture.room.id} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "JORDAN WINS THE ROUND." }),
+    ).toBeVisible();
+    expect(screen.getByText(/Jordan won the 100 point pot/i)).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Mini-Game results" }),
+    ).toHaveTextContent("Maya −50 points · Jordan +50 points");
   });
 });
 
@@ -550,6 +601,46 @@ describe("GameClient Mini-Game Challenges", () => {
       await screen.findByRole("heading", { name: /you won the pot/i }),
     ).toBeVisible();
     expect(screen.getByText(/remaining room queue/i)).toBeVisible();
+  });
+
+  it("shows non-participants who is playing, the game, and the locked stakes", async () => {
+    const active = miniGameSnapshot({
+      type: "stop_bar",
+      targetPosition: 0.4,
+      markerSpeed: 0.5,
+      initialDirection: 1,
+      maximumDurationMs: 10_000,
+    });
+    const spectator = {
+      ...active,
+      miniGameState: {
+        ...active.miniGameState,
+        challenge: null,
+        publicChallenge: {
+          id: active.miniGameState.challenge.id,
+          challengerPlayerId: active.players[0].id,
+          opponentPlayerId: active.players[1].id,
+          stakeType: "half",
+          stakePerPlayer: 50,
+          pot: 100,
+          gameType: "stop_bar",
+          attempt: 1,
+          status: "active",
+        },
+      },
+    };
+    testState.rpc.mockResolvedValue({ data: spectator, error: null });
+
+    render(<GameClient roomId={matchFixture.room.id} />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /Maya challenged Jordan/i,
+      }),
+    ).toBeVisible();
+    expect(screen.getAllByText("STOP BAR")).toHaveLength(2);
+    expect(screen.getByText("100")).toBeVisible();
+    expect(screen.getByText(/complete net change/i)).toBeVisible();
   });
 
   it("renders the Memory display with non-color symbols", async () => {

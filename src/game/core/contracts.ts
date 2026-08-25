@@ -280,12 +280,25 @@ export type MiniGameChallengeSnapshot = {
   cancellationReason: string | null;
 };
 
+export type PublicMiniGameChallengeSnapshot = {
+  id: string;
+  status: "active" | "tiebreaker_active";
+  challengerPlayerId: string;
+  opponentPlayerId: string;
+  stakeType: MiniGameStakeType;
+  stakePerPlayer: number;
+  pot: number;
+  gameType: MiniGameType;
+  attempt: 1 | 2;
+};
+
 export type MiniGameState = {
   tokenAvailable: boolean;
   eligibleOpponentIds: string[];
   roomQueueCount: number;
   roomHasActiveChallenge: boolean;
   challenge: MiniGameChallengeSnapshot | null;
+  publicChallenge: PublicMiniGameChallengeSnapshot | null;
 };
 
 export type MatchPlayer = {
@@ -342,6 +355,25 @@ export type RoundSummary = {
     decisionType: PointDecisionType;
     result: Record<string, unknown>;
     resolvedAt: string;
+  }>;
+  scoreChanges: Array<{
+    playerId: string;
+    pointsChanged: number;
+  }>;
+  miniGames: Array<{
+    id: string;
+    challengerPlayerId: string;
+    opponentPlayerId: string;
+    stakeType: MiniGameStakeType;
+    stakePerPlayer: number | null;
+    pot: number | null;
+    gameType: MiniGameType | null;
+    attempt: 1 | 2;
+    status: MiniGameChallengeStatus;
+    winnerPlayerId: string | null;
+    resolutionMethod: MiniGameResolutionMethod | null;
+    challengerScoreChange: number;
+    opponentScoreChange: number;
   }>;
 };
 
@@ -551,6 +583,8 @@ function parseMiniGameSpecification(value: unknown): MiniGameSpecification {
 function parseMiniGameState(value: unknown): MiniGameState {
   const state = object(value);
   const challenge = state.challenge === null ? null : object(state.challenge);
+  const publicChallenge =
+    state.publicChallenge === null ? null : object(state.publicChallenge);
   return {
     tokenAvailable: boolean(state.tokenAvailable),
     eligibleOpponentIds: array(state.eligibleOpponentIds).map(uuid),
@@ -601,6 +635,22 @@ function parseMiniGameState(value: unknown): MiniGameState {
           cancellationReason: nullable(challenge.cancellationReason, string),
         }
       : null,
+    publicChallenge: publicChallenge
+      ? {
+          id: uuid(publicChallenge.id),
+          status: oneOf(publicChallenge.status, [
+            "active",
+            "tiebreaker_active",
+          ] as const),
+          challengerPlayerId: uuid(publicChallenge.challengerPlayerId),
+          opponentPlayerId: uuid(publicChallenge.opponentPlayerId),
+          stakeType: oneOf(publicChallenge.stakeType, ["half", "all"] as const),
+          stakePerPlayer: integer(publicChallenge.stakePerPlayer),
+          pot: integer(publicChallenge.pot),
+          gameType: oneOf(publicChallenge.gameType, miniGameTypes),
+          attempt: oneOf(publicChallenge.attempt, [1, 2] as const),
+        }
+      : null,
   };
 }
 
@@ -632,6 +682,49 @@ function parseSummary(value: unknown): RoundSummary {
         ] as const),
         result: object(decision.result),
         resolvedAt: date(decision.resolvedAt),
+      };
+    }),
+    scoreChanges: array(summary.scoreChanges).map((item) => {
+      const change = object(item);
+      return {
+        playerId: uuid(change.playerId),
+        pointsChanged: integer(change.pointsChanged),
+      };
+    }),
+    miniGames: array(summary.miniGames).map((item) => {
+      const miniGame = object(item);
+      return {
+        id: uuid(miniGame.id),
+        challengerPlayerId: uuid(miniGame.challengerPlayerId),
+        opponentPlayerId: uuid(miniGame.opponentPlayerId),
+        stakeType: oneOf(miniGame.stakeType, ["half", "all"] as const),
+        stakePerPlayer: nullable(miniGame.stakePerPlayer, integer),
+        pot: nullable(miniGame.pot, integer),
+        gameType: nullable(miniGame.gameType, (game) =>
+          oneOf(game, miniGameTypes),
+        ),
+        attempt: oneOf(miniGame.attempt, [1, 2] as const),
+        status: oneOf(miniGame.status, [
+          "queued",
+          "active",
+          "tiebreaker_active",
+          "resolved",
+          "cancelled",
+          "refunded",
+        ] as const),
+        winnerPlayerId: nullable(miniGame.winnerPlayerId, uuid),
+        resolutionMethod: nullable(miniGame.resolutionMethod, (method) =>
+          oneOf(method, [
+            "game_result",
+            "opponent_timeout",
+            "opponent_invalid",
+            "tiebreaker_result",
+            "random_fallback",
+            "server_refund",
+          ] as const),
+        ),
+        challengerScoreChange: integer(miniGame.challengerScoreChange),
+        opponentScoreChange: integer(miniGame.opponentScoreChange),
       };
     }),
   };

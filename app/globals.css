@@ -2734,6 +2734,27 @@ html[data-motion="reduce"] *::after {
 .mini-wait-card p:last-child {
   color: var(--muted);
 }
+.mini-spectator-details {
+  width: min(580px, 100%);
+  margin: 20px auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.mini-spectator-details span {
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.mini-spectator-details strong {
+  color: var(--lime);
+  font-size: 15px;
+  text-transform: capitalize;
+}
 .mini-start-countdown {
   flex: 1;
   display: grid;
@@ -3114,6 +3135,67 @@ html[data-motion="reduce"] *::after {
   font-family: var(--font-display);
   font-size: 24px;
 }
+.summary-net-change {
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(145, 120, 255, 0.22);
+  border-radius: 10px;
+}
+.summary-net-change span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.summary-net-change strong {
+  color: var(--purple-bright);
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+.summary-mini-games {
+  max-width: 880px;
+  margin: 22px auto;
+  display: grid;
+  gap: 10px;
+}
+.summary-mini-games > .eyebrow {
+  margin: 0;
+  text-align: center;
+}
+.summary-mini-games article {
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid rgba(145, 120, 255, 0.28);
+  border-radius: 14px;
+  background: rgba(118, 87, 255, 0.08);
+}
+.summary-mini-games article > div {
+  display: grid;
+  gap: 3px;
+}
+.summary-mini-games article span {
+  color: var(--purple-bright);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.summary-mini-games article p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.summary-mini-games article svg {
+  flex: 0 0 auto;
+  color: var(--gold);
+}
 .summary-card-footer {
   display: grid;
   gap: 5px;
@@ -3285,6 +3367,16 @@ html[data-motion="reduce"] *::after {
   }
   .memory-controls {
     grid-template-columns: repeat(2, 74px);
+  }
+  .mini-spectator-details {
+    grid-template-columns: 1fr;
+  }
+  .summary-mini-games article {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .summary-mini-games article p {
+    text-align: left;
   }
 }
 

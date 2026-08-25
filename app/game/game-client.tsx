@@ -1047,6 +1047,7 @@ function MiniGameResolutionPanel({
   onSubmit: (result: Record<string, unknown>) => Promise<void>;
 }) {
   const challenge = snapshot.miniGameState.challenge;
+  const publicChallenge = snapshot.miniGameState.publicChallenge;
   const self = snapshot.players.find((player) => player.isSelf)!;
   const opponent = challenge
     ? snapshot.players.find(
@@ -1069,15 +1070,46 @@ function MiniGameResolutionPanel({
   }, [challenge?.startsAt]);
 
   if (!challenge) {
+    const challenger = snapshot.players.find(
+      (player) => player.id === publicChallenge?.challengerPlayerId,
+    );
+    const challenged = snapshot.players.find(
+      (player) => player.id === publicChallenge?.opponentPlayerId,
+    );
+    const publicGameName = publicChallenge?.gameType
+      .replaceAll("_", " ")
+      .toUpperCase();
     return (
       <section className="mini-resolution-shell">
         <div className="mini-wait-card" role="status">
           <RefreshCcw className="state-spinner" aria-hidden="true" />
-          <p className="eyebrow">MINI-GAMES IN PROGRESS</p>
-          <h1>Another matchup is resolving.</h1>
+          <p className="eyebrow">{publicGameName ?? "MINI-GAME PREPARING"}</p>
+          <h1>
+            {publicChallenge
+              ? `${challenger?.displayName ?? "A player"} challenged ${challenged?.displayName ?? "an opponent"}.`
+              : "The next matchup is preparing."}
+          </h1>
+          {publicChallenge ? (
+            <div className="mini-spectator-details">
+              <span>
+                Game <strong>{publicGameName}</strong>
+              </span>
+              <span>
+                Stake each{" "}
+                <strong>
+                  {publicChallenge.stakePerPlayer.toLocaleString()}
+                </strong>
+              </span>
+              <span>
+                Winner receives{" "}
+                <strong>{publicChallenge.pot.toLocaleString()}</strong>
+              </span>
+            </div>
+          ) : null}
           <p>
-            Challenge details and results are private to its two participants.
-            This screen will advance automatically.
+            You are spectating. Scores update after the result is validated,
+            then the round summary will show every player&apos;s complete net
+            change.
           </p>
         </div>
         <Leaderboard snapshot={snapshot} />
@@ -1899,30 +1931,29 @@ function RoundSummaryPanel({
   remaining: number;
 }) {
   const summary = snapshot.roundSummaries.at(-1)!;
-  const highestAward = Math.max(
-    0,
-    ...summary.cards.map((card) => card.pointsAwarded),
+  const highestChange = Math.max(
+    ...summary.scoreChanges.map((change) => change.pointsChanged),
   );
-  const leaders = summary.cards.filter(
-    (card) => card.pointsAwarded === highestAward,
+  const leaders = summary.scoreChanges.filter(
+    (change) => change.pointsChanged === highestChange,
   );
   const leaderNames = leaders
     .map(
-      (card) =>
-        snapshot.players.find((player) => player.id === card.playerId)
+      (change) =>
+        snapshot.players.find((player) => player.id === change.playerId)
           ?.displayName,
     )
     .filter(Boolean);
   const headline =
-    highestAward === 0
-      ? "NO POINTS THIS ROUND."
+    highestChange === 0
+      ? "NO NET SCORE WINNER."
       : leaders.length === 1
-        ? `${leaderNames[0]?.toUpperCase()} TAKES THE ROUND.`
-        : "THE ROUND ENDS IN A TIE.";
+        ? `${leaderNames[0]?.toUpperCase()} WINS THE ROUND.`
+        : "THE ROUND ENDS WITH JOINT LEADERS.";
   const resultCopy =
-    highestAward === 0
-      ? "Every revealed card finished with zero awarded points."
-      : `${leaderNames.join(" & ")} earned ${highestAward.toLocaleString()} point${highestAward === 1 ? "" : "s"}, the highest award this round.`;
+    highestChange === 0
+      ? "No player finished with a positive net score change."
+      : `${leaderNames.join(" & ")} finished the round ${formatSignedPoints(highestChange)}. This includes Action Cards, point cards, and Mini-Games.`;
   return (
     <section className="round-summary-panel">
       <div className="summary-heading">
@@ -1937,18 +1968,21 @@ function RoundSummaryPanel({
       >
         <Trophy aria-hidden="true" />
         <div>
-          <span>{leaders.length === 1 ? "ROUND LEADER" : "ROUND LEADERS"}</span>
+          <span>{leaders.length === 1 ? "ROUND WINNER" : "ROUND LEADERS"}</span>
           <strong>{leaderNames.join(" · ") || "No winner"}</strong>
         </div>
-        <b>+{highestAward.toLocaleString()}</b>
+        <b>{formatSignedPoints(highestChange)}</b>
       </div>
       <div className="summary-card-grid">
         {summary.cards.map((card) => {
           const player = snapshot.players.find(
             (item) => item.id === card.playerId,
           );
-          const isLeader =
-            highestAward > 0 && card.pointsAwarded === highestAward;
+          const netChange =
+            summary.scoreChanges.find(
+              (change) => change.playerId === card.playerId,
+            )?.pointsChanged ?? 0;
+          const isLeader = highestChange > 0 && netChange === highestChange;
           const resolutionLabel = {
             lock_in: "Banked safely",
             challenge_win: "Challenge winner",
@@ -1975,8 +2009,12 @@ function RoundSummaryPanel({
                 <small>POINT CARD</small>
               </div>
               <div className="summary-points-earned">
-                <span>Earned this round</span>
+                <span>Point-card award</span>
                 <strong>+{card.pointsAwarded.toLocaleString()}</strong>
+              </div>
+              <div className="summary-net-change">
+                <span>Complete round change</span>
+                <strong>{formatSignedPoints(netChange)}</strong>
               </div>
               <div className="summary-card-footer">
                 <em>{resolutionLabel}</em>
@@ -1988,12 +2026,57 @@ function RoundSummaryPanel({
           );
         })}
       </div>
+      {summary.miniGames.length > 0 && (
+        <section className="summary-mini-games" aria-label="Mini-Game results">
+          <p className="eyebrow">MINI-GAME RESULTS</p>
+          {summary.miniGames.map((miniGame) => {
+            const challenger = snapshot.players.find(
+              (player) => player.id === miniGame.challengerPlayerId,
+            );
+            const opponent = snapshot.players.find(
+              (player) => player.id === miniGame.opponentPlayerId,
+            );
+            const winner = snapshot.players.find(
+              (player) => player.id === miniGame.winnerPlayerId,
+            );
+            return (
+              <article key={miniGame.id}>
+                <div>
+                  <span>
+                    {miniGame.gameType?.replaceAll("_", " ") ?? "Mini-Game"}
+                  </span>
+                  <strong>
+                    {challenger?.displayName} challenged {opponent?.displayName}
+                  </strong>
+                </div>
+                {miniGame.status === "resolved" ? (
+                  <p>
+                    <Trophy aria-hidden="true" /> {winner?.displayName} won the{" "}
+                    {miniGame.pot?.toLocaleString()} point pot.{" "}
+                    {challenger?.displayName}{" "}
+                    {formatSignedPoints(miniGame.challengerScoreChange)} ·{" "}
+                    {opponent?.displayName}{" "}
+                    {formatSignedPoints(miniGame.opponentScoreChange)}
+                  </p>
+                ) : (
+                  <p>No points moved because this Mini-Game was not settled.</p>
+                )}
+              </article>
+            );
+          })}
+        </section>
+      )}
       <p className="summary-next-round" role="timer">
         Next round begins in <strong>{remaining}</strong> seconds
       </p>
       <Leaderboard snapshot={snapshot} />
     </section>
   );
+}
+
+function formatSignedPoints(value: number) {
+  if (value === 0) return "0 points";
+  return `${value > 0 ? "+" : "−"}${Math.abs(value).toLocaleString()} points`;
 }
 
 function GameState({

@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(42);
+select plan(46);
 
 insert into auth.users(id,aud,role,is_anonymous,created_at,updated_at)
 select ('70000000-0000-4000-8000-' || lpad(value::text,12,'0'))::uuid,
@@ -68,7 +68,12 @@ reset role;
 select is((select count(*) from public.mini_game_challenges where room_id=current_setting('scoreup.mini_room1')::uuid),1::bigint,'replay creates one queued challenge');
 select ok(not (select mini_game_token_used from public.players where id=current_setting('scoreup.mini_actor1')::uuid),'queued challenge does not consume the token');
 select set_config('scoreup.test_mini_game_type','stop_bar',true);
-select pg_temp.finish_points(current_setting('scoreup.mini_room1')::uuid);
+update public.round_cards_private set original_value=0,current_value=0 where room_id=current_setting('scoreup.mini_room1')::uuid;
+update public.rooms set phase_deadline=statement_timestamp()-interval '1 second' where id=current_setting('scoreup.mini_room1')::uuid;
+update public.rounds set phase_deadline=statement_timestamp()-interval '1 second',turn_deadline=statement_timestamp()-interval '1 second' where room_id=current_setting('scoreup.mini_room1')::uuid and status='active';
+select set_config('scoreup.expired_player1',(select current_turn_player_id::text from public.rooms where id=current_setting('scoreup.mini_room1')::uuid),true);
+select pg_temp.claim('70000000-0000-4000-8000-000000000001'); set local role authenticated;
+select lives_ok(format('select public.process_expired_turn(%L,%L,%L)',current_setting('scoreup.mini_room1')::uuid,current_setting('scoreup.expired_player1')::uuid,'72000000-0000-4000-8000-000000000017'::uuid),'an expired point-card turn auto-banks and preserves the queued Mini-Game'); reset role;
 select set_config('scoreup.challenge1',(select id::text from public.mini_game_challenges where room_id=current_setting('scoreup.mini_room1')::uuid),true);
 select is((select status from public.mini_game_challenges where id=current_setting('scoreup.challenge1')::uuid),'active'::public.mini_game_challenge_status,'front queue item starts after point scoring');
 select is((select stake_per_player from public.mini_game_challenges where id=current_setting('scoreup.challenge1')::uuid),600,'Half stake uses lower score, halves, and floors to 50');
@@ -78,6 +83,8 @@ select is((select score from public.players where id=current_setting('scoreup.mi
 select ok((select mini_game_token_used from public.players where id=current_setting('scoreup.mini_actor1')::uuid),'challenger token is consumed only at successful start');
 select ok(not (select mini_game_token_used from public.players where id=current_setting('scoreup.mini_target1')::uuid),'challenged player token remains available');
 select is((select count(*) from public.score_ledger where mini_game_challenge_id=current_setting('scoreup.challenge1')::uuid),2::bigint,'escrow creates two signed deduction entries');
+select is((private.build_match_snapshot(current_setting('scoreup.mini_room1')::uuid,'70000000-0000-4000-8000-000000000002'::uuid)->'miniGameState'->'publicChallenge'->>'gameType'),'stop_bar','the public-safe snapshot tells spectators which Mini-Game is active');
+select ok(not (private.build_match_snapshot(current_setting('scoreup.mini_room1')::uuid,'70000000-0000-4000-8000-000000000002'::uuid)->'miniGameState'->'publicChallenge' ? 'specification'),'the spectator snapshot never exposes the private game specification');
 update public.mini_game_challenges set starts_at=statement_timestamp()-interval '1 second',submission_deadline=statement_timestamp()+interval '30 seconds' where id=current_setting('scoreup.challenge1')::uuid;
 select set_config('scoreup.targetpos',(select expected_result->>'targetPosition' from private.mini_game_specs where challenge_id=current_setting('scoreup.challenge1')::uuid and attempt=1),true);
 select pg_temp.claim('70000000-0000-4000-8000-000000000001'); set local role authenticated;
@@ -88,6 +95,7 @@ select is((select winner_player_id from public.mini_game_challenges where id=cur
 select is((select score from public.players where id=current_setting('scoreup.mini_actor1')::uuid),2600::bigint,'winner receives the entire pot exactly once');
 select is((select count(*) from public.score_ledger where mini_game_challenge_id=current_setting('scoreup.challenge1')::uuid),3::bigint,'settlement adds one pot award ledger entry');
 select is((select current_phase from public.rooms where id=current_setting('scoreup.mini_room1')::uuid),'round_summary'::public.game_phase,'empty queue advances to round summary');
+select is(jsonb_array_length(private.build_match_snapshot(current_setting('scoreup.mini_room1')::uuid,'70000000-0000-4000-8000-000000000001'::uuid)->'roundSummaries'->0->'miniGames'),1,'round summary includes the settled Mini-Game result');
 
 -- Stake All and no-valid-submission random fallback.
 select set_config('scoreup.mini_room2',pg_temp.make_room('70000000-0000-4000-8000-000000000003','70000000-0000-4000-8000-000000000004','Mini All','71000000-0000-4000-8000-000000000002')::text,true);

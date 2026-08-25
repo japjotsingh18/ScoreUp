@@ -87,6 +87,7 @@ export const matchFixture = {
     roomQueueCount: 0,
     roomHasActiveChallenge: false,
     challenge: null,
+    publicChallenge: null,
   },
   completionState: {
     phase: "point_decisions",
