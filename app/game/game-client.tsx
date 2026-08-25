@@ -469,13 +469,7 @@ export function GameClient({ roomId }: { roomId: string | null }) {
   async function chooseChallenge() {
     if (auth.status !== "ready" || !snapshot || !targetId) return;
     const target = snapshot.players.find((player) => player.id === targetId);
-    if (
-      !target ||
-      !window.confirm(
-        `Challenge ${target.displayName}? Both cards will resolve immediately.`,
-      )
-    )
-      return;
+    if (!target) return;
     setPending("challenge");
     setNotice("");
     try {

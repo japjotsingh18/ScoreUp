@@ -556,6 +556,38 @@ describe("GameClient round results", () => {
   });
 });
 
+describe("GameClient point-card challenge", () => {
+  beforeEach(() => {
+    testState.rpc.mockReset();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("resolves the selected challenge directly without a browser popup", async () => {
+    const initial = pointSnapshot();
+    testState.rpc.mockResolvedValue({ data: initial, error: null });
+    const user = userEvent.setup();
+    render(<GameClient roomId={matchFixture.room.id} />);
+
+    await user.selectOptions(
+      await screen.findByLabelText("Challenge an unresolved player"),
+      initial.players[1].id,
+    );
+    await user.click(screen.getByRole("button", { name: /^challenge$/i }));
+
+    await waitFor(() =>
+      expect(testState.rpc).toHaveBeenCalledWith(
+        "challenge_point_card",
+        expect.objectContaining({
+          p_target_player_id: initial.players[1].id,
+        }),
+      ),
+    );
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+});
+
 describe("GameClient Mini-Game Challenges", () => {
   beforeEach(() => {
     testState.rpc.mockReset();
