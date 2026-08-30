@@ -21,7 +21,14 @@ import {
   Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   gameErrorMessages,
   type MatchSnapshot,
@@ -766,6 +773,7 @@ export function GameClient({ roomId }: { roomId: string | null }) {
             remaining={remaining}
             pending={pending}
             onReady={toggleSummaryReady}
+            reducedMotion={preferences.reducedMotion}
           />
         )
       ) : snapshot.room.phase === "action_choice" ? (
@@ -1961,11 +1969,13 @@ function RoundSummaryPanel({
   remaining,
   pending,
   onReady,
+  reducedMotion,
 }: {
   snapshot: MatchSnapshot;
   remaining: number;
   pending: string | null;
   onReady: () => Promise<void>;
+  reducedMotion: boolean;
 }) {
   const summary = snapshot.roundSummaries.at(-1)!;
   const highestChange = Math.max(
@@ -2011,7 +2021,7 @@ function RoundSummaryPanel({
         <b>{formatSignedPoints(highestChange)}</b>
       </div>
       <div className="summary-card-grid">
-        {summary.cards.map((card) => {
+        {summary.cards.map((card, cardIndex) => {
           const player = snapshot.players.find(
             (item) => item.id === card.playerId,
           );
@@ -2020,6 +2030,16 @@ function RoundSummaryPanel({
               (change) => change.playerId === card.playerId,
             )?.pointsChanged ?? 0;
           const isLeader = highestChange > 0 && netChange === highestChange;
+          const previousScore = Math.max(0, (player?.score ?? 0) - netChange);
+          const decisions = summary.decisions.filter(
+            (decision) => decision.actingPlayerId === card.playerId,
+          );
+          const actionCards = snapshot.recentEvents.filter(
+            (event) =>
+              event.roundNumber === summary.roundNumber &&
+              event.type === "action_card_resolved" &&
+              event.actorPlayerId === card.playerId,
+          );
           const resolutionLabel = {
             lock_in: "Banked safely",
             challenge_win: "Challenge winner",
@@ -2031,7 +2051,8 @@ function RoundSummaryPanel({
           return (
             <article
               key={card.playerId}
-              className={isLeader ? "is-round-leader" : undefined}
+              className={`summary-player-result${isLeader ? " is-round-leader" : ""}`}
+              style={{ "--reveal-order": cardIndex } as CSSProperties}
             >
               <header>
                 <span>{player?.displayName}</span>
@@ -2044,19 +2065,55 @@ function RoundSummaryPanel({
                 <span>SU</span>
                 <strong>{card.currentValue.toLocaleString()}</strong>
                 <small>POINT CARD</small>
+                {isLeader && (
+                  <span className="summary-winning-stamp">
+                    <Trophy size={13} aria-hidden="true" /> WINNING CARD
+                  </span>
+                )}
               </div>
-              <div className="summary-points-earned">
-                <span>Point-card award</span>
-                <strong>+{card.pointsAwarded.toLocaleString()}</strong>
+              <div className="summary-move-strip" aria-label="Player choices">
+                {actionCards.map((event) => (
+                  <span key={event.sequence} className="is-action">
+                    <Sparkles size={12} aria-hidden="true" />
+                    {actionCardResultLabel(event)}
+                  </span>
+                ))}
+                {decisions.map((decision, index) => (
+                  <span key={`${decision.resolvedAt}-${index}`}>
+                    {decision.decisionType === "challenge" ? (
+                      <Swords size={12} aria-hidden="true" />
+                    ) : (
+                      <ShieldCheck size={12} aria-hidden="true" />
+                    )}
+                    {decisionLabel(decision.decisionType)}
+                  </span>
+                ))}
               </div>
-              <div className="summary-net-change">
-                <span>Complete round change</span>
-                <strong>{formatSignedPoints(netChange)}</strong>
+              <div
+                className={`summary-score-flow${netChange < 0 ? " is-loss" : netChange > 0 ? " is-gain" : ""}`}
+                aria-label={`${player?.displayName ?? "Player"} score changed from ${previousScore.toLocaleString()} to ${(player?.score ?? 0).toLocaleString()}`}
+              >
+                <span className="summary-score-before">
+                  <small>BEFORE</small>
+                  <b>{previousScore.toLocaleString()}</b>
+                </span>
+                <span className="summary-score-delta">
+                  {formatSignedPoints(netChange)}
+                </span>
+                <span className="summary-score-now">
+                  <small>NOW</small>
+                  <AnimatedScore
+                    from={previousScore}
+                    to={player?.score ?? 0}
+                    delay={cardIndex * 160 + 650}
+                    reducedMotion={reducedMotion}
+                  />
+                </span>
               </div>
               <div className="summary-card-footer">
                 <em>{resolutionLabel}</em>
                 <span>
-                  New total <b>{player?.score.toLocaleString() ?? "—"}</b>
+                  Point-card award <b>+{card.pointsAwarded.toLocaleString()}</b>
                 </span>
               </div>
             </article>
@@ -2095,6 +2152,62 @@ function RoundSummaryPanel({
       <Leaderboard snapshot={snapshot} />
     </section>
   );
+}
+
+function AnimatedScore({
+  from,
+  to,
+  delay,
+  reducedMotion,
+}: {
+  from: number;
+  to: number;
+  delay: number;
+  reducedMotion: boolean;
+}) {
+  const [value, setValue] = useState(reducedMotion ? to : from);
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    let frame = 0;
+    let startedAt: number | null = null;
+    const duration = 900;
+    const start = window.setTimeout(() => {
+      const tick = (time: number) => {
+        startedAt ??= time;
+        const progress = Math.min(1, (time - startedAt) / duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        setValue(Math.round(from + (to - from) * eased));
+        if (progress < 1) frame = window.requestAnimationFrame(tick);
+      };
+      frame = window.requestAnimationFrame(tick);
+    }, delay);
+    return () => {
+      window.clearTimeout(start);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [delay, from, reducedMotion, to]);
+
+  return <b>{(reducedMotion ? to : value).toLocaleString()}</b>;
+}
+
+function decisionLabel(
+  decision: RoundSummary["decisions"][number]["decisionType"],
+) {
+  return {
+    lock_in: "BANKED",
+    challenge: "CHALLENGED",
+    auto_lock_in: "AUTO-BANKED",
+    timeout: "AUTO-BANKED",
+  }[decision];
+}
+
+function actionCardResultLabel(event: PublicGameEvent) {
+  const code = String(event.payload.cardCode ?? "mystery_card");
+  return code
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function MiniGameResultPanel({

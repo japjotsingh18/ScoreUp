@@ -117,12 +117,31 @@ function roundSummarySnapshot() {
             pointsAwarded: 1_250,
           },
         ],
-        decisions: [],
+        decisions: [
+          {
+            actingPlayerId: base.players[0].id,
+            targetPlayerId: base.players[1].id,
+            decisionType: "challenge",
+            result: {},
+            resolvedAt: "2026-08-13T00:00:17Z",
+          },
+        ],
         scoreChanges: [
           { playerId: base.players[0].id, pointsChanged: 0 },
           { playerId: base.players[1].id, pointsChanged: 1_250 },
         ],
         miniGames: [],
+      },
+    ],
+    recentEvents: [
+      ...base.recentEvents,
+      {
+        sequence: 2,
+        roundNumber: 1,
+        type: "action_card_resolved",
+        actorPlayerId: base.players[0].id,
+        payload: { cardCode: "score_boost", category: "positive" },
+        createdAt: "2026-08-13T00:00:05Z",
       },
     ],
   };
@@ -422,7 +441,13 @@ describe("GameClient action phase", () => {
 });
 
 describe("GameClient round results", () => {
-  beforeEach(() => testState.rpc.mockReset());
+  beforeEach(() => {
+    testState.rpc.mockReset();
+    window.localStorage.setItem(
+      "scoreup.preferences.v1",
+      JSON.stringify({ soundEnabled: true, reducedMotion: true }),
+    );
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("names the round winner and separates card value, net change, and new total", async () => {
@@ -442,10 +467,13 @@ describe("GameClient round results", () => {
     const winningCard = screen.getByText("Challenge winner").closest("article");
     expect(winningCard).not.toBeNull();
     expect(within(winningCard!).getByText("Point-card award")).toBeVisible();
-    expect(
-      within(winningCard!).getByText("Complete round change"),
-    ).toBeVisible();
     expect(within(winningCard!).getByText("2,225")).toBeVisible();
+    expect(screen.getByText("CHALLENGED")).toBeVisible();
+    expect(screen.getByText("Score Boost")).toBeVisible();
+    expect(screen.getByText("WINNING CARD")).toBeVisible();
+    expect(
+      screen.getByLabelText("Jordan score changed from 975 to 2,225"),
+    ).toHaveTextContent("+1,250 points");
     expect(
       screen.getByRole("button", { name: "Ready for next round" }),
     ).toBeVisible();
